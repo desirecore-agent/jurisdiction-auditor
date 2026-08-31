@@ -1,0 +1,133 @@
+{
+  "$schema": "http://desirecore/schemas/agent.json",
+  "version": "1.0.0",
+  "name": "法域合规官",
+  "description": "合同审查流水线的法域知识注入环节。按 custom > jurisdiction > base 三层优先级合并规则集，做法域识别、强制性规定匹配与多法域冲突标注，产出法域适用性报告。法域未确定或规则包与法域线索不一致时阻断，绝不用 base 层单独给出合规结论。",
+  "author": "DesireCore",
+  "avatar": {
+    "char": "域",
+    "color": "purple"
+  },
+  "llm": {
+    "routingMode": "smart",
+    "smart": {
+      "profile": {
+        "tier": "flagship",
+        "requiredCapabilities": [
+          "tool_use",
+          "long_context"
+        ],
+        "reasoning": "high"
+      }
+    },
+    "maxRetryDelayMs": 32000
+  },
+  "capabilities": [
+    "jurisdiction-audit",
+    "contract-review",
+    "governing-law-identification",
+    "jurisdiction-pack-merge",
+    "mandatory-rule-matching",
+    "jurisdiction-conflict-detection",
+    "cross-border-data-compliance-check",
+    "citation-discipline-enforcement",
+    "version-matrix-alignment"
+  ],
+  "trigger_patterns": [
+    "法域",
+    "准据法",
+    "适用法律",
+    "管辖",
+    "法域冲突",
+    "法域合规",
+    "合规稽核",
+    "强制性规定",
+    "知识包",
+    "规则包",
+    "中国法",
+    "美国法",
+    "数据出境",
+    "跨境传输",
+    "GDPR",
+    "PIPL",
+    "CCPA",
+    "jurisdiction",
+    "governing law",
+    "choice of law",
+    "conflict of laws",
+    "jurisdiction pack",
+    "mandatory rules",
+    "cross-border transfer",
+    "compliance audit"
+  ],
+  "accepts_handoff": true,
+  "accepts_messages": true,
+  "max_concurrent_sessions": 3,
+  "command_authority": {
+    "enabled": true,
+    "allowed_targets": [
+      "contract-review-lead",
+      "review-reporter"
+    ]
+  },
+  "default_enabled": {
+    "skills": [
+      "jurisdiction-audit"
+    ],
+    "tools": []
+  },
+  "tool_permissions": {
+    "allowed": [
+      "Read",
+      "Ls",
+      "Glob",
+      "Grep",
+      "Write",
+      "Edit",
+      "Skill",
+      "MathCalc",
+      "GenerateUUID",
+      "UnderstandImage",
+      "AskUserQuestion",
+      "Delegate",
+      "SendMessage",
+      "FileDigest"
+    ],
+    "denied": [
+      "Bash",
+      "PowerShell",
+      "TerminalControl",
+      "HttpRequest",
+      "WebFetch",
+      "WebSearch",
+      "ComputeCredential",
+      "ControlDesireCoreGui",
+      "BrowserTakeover",
+      "RecallConversation",
+      "spawn_agent"
+    ]
+  },
+  "network_security": {
+    "enableSsrfProtection": true
+  },
+  "file_security": {
+    "restrictToWorkDirs": true
+  },
+  "compute_credentials": {
+    "allowed_providers": []
+  },
+  "tools": {
+    "ask_user_question": {
+      "wait_mode": "always_wait"
+    }
+  },
+  "env": {
+    "enabled": true,
+    "includeWeekday": true,
+    "includeLocalTime": true,
+    "includeSessionStart": true,
+    "includeOs": false,
+    "includeRuntime": false,
+    "includeManagedRuntimes": false
+  }
+}
