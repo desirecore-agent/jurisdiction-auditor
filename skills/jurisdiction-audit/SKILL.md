@@ -49,7 +49,7 @@ metadata:
 在流水线第 4 步「法域知识注入」执行本技能，输入是 `clause-extractor` 的结构化交接块。
 与 `risk-scanner` **并行**执行：输入相同、互不依赖、互不读对方结论。
 
-不在以下情况使用：上游受理结论为 `reject`（流水线已终止）、上游交接块缺失或未通过核验（J1 拒绝启动）。
+不在以下情况使用：上游受理结论为 `blocked`（流水线已终止）、上游交接块缺失或未通过核验（J1 拒绝启动）。
 
 ## 不可协商的前提
 
@@ -126,7 +126,7 @@ J8 用 `Grep` 在**已落盘的产物文件**上逐条检索，命中即产物�
 | 前置条件 | 不满足时 |
 |---|---|
 | 上游 `handoff` 块存在，`from: clause-extractor` | 拒绝启动，回报「缺交接块」 |
-| 上游链路的受理结论 ∈ {`pass`, `conditional_pass`} | 拒绝启动（`reject` 时流水线已终止） |
+| 上游链路的受理结论 ∈ {`passed`, `conditional`} | 拒绝启动（`blocked` 时流水线已终止） |
 | `object` 三元组齐备（`contract_object_id` + `version_label` + `content_digest`） | 拒绝启动，回报「对象身份不完整」 |
 | `artifact_path`（条款抽取产物）可读，`parts[].source` 全部可读 | 拒绝启动，回报缺失的绝对路径 |
 
@@ -904,7 +904,7 @@ handoff:
 
 **启动与边界**
 
-- [ ] 上游 `handoff` 存在且受理结论 ∈ {`pass`, `conditional_pass`}，未在 `reject` 下启动
+- [ ] 上游 `handoff` 存在且受理结论 ∈ {`passed`, `conditional`}，未在 `blocked` 下启动
 - [ ] `object` 三元组齐备且**逐字**承自上游，未改写
 - [ ] 没有读上游的推理过程、中间草稿或对话历史
 - [ ] 没有读 `base/missing-clauses.yaml` 与 `base/market-benchmarks.yaml`（那是 `risk-scanner` 的判据）
