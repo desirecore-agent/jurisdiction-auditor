@@ -2,7 +2,8 @@
 name: jurisdiction-audit
 description: >-
   合同法域合规审计。按 custom > jurisdiction > base 三层知识结构，以固定顺序 J1→J8 完成
-  法域识别、规则包加载与版本矩阵校验、强制性规定匹配、多法域冲突判定、覆盖缺口披露与
+  法域识别（含从正文援引的实体法名称推定法域）、规则包加载与版本矩阵校验、
+  强制性规定匹配、多法域冲突判定、覆盖缺口披露与
   Human Gate 登记，产出带 rule_id、知识层、置信度与页码锚点的法域适用性报告。
   法域未确定或 jurisdiction_pack_version 与法域线索不一致时阻断；只命中 base 层时
   只能输出通用风控观察，不得给出任何合规结论。法条置信度原样转述，禁止编造条文编号与判例。
@@ -11,7 +12,7 @@ description: >-
   Use when auditing a contract against jurisdiction knowledge packs: identifies governing
   law from clues, merges custom/jurisdiction/base layers, flags multi-regime conflicts with
   clause numbers and pages, and blocks when the pack version does not match the clues.
-version: 1.0.0
+version: 1.1.0
 type: procedural
 risk_level: low
 status: enabled
@@ -161,6 +162,20 @@ J8 用 `Grep` 在**已落盘的产物文件**上逐条检索，命中即产物�
 | ② | 争议解决机构 | `dispute_resolution.forum` / `seat` | 强佐证 | 指名 CIETAC / 深圳国际仲裁院 / AAA / 都柏林法院等 |
 | ③ | 数据合规制度 | `jurisdiction_clues.data_regimes_referenced` | **独立成边** | PIPL / GDPR / CCPA；**不是准据法**，是另一类 `governed_by` 边 |
 | ④ | 当事方住所地 | `jurisdiction_clues.party_domiciles` | 仅推定用 | 只在①缺失时用于推定，且必须标注 |
+| ⑤ | **援引的实体法** | `jurisdiction_clues.cited_statutes` | 推定用，**强于④** | 正文写「根据《中华人民共和国XXX法》…」。法名形式本身即锁定法域 |
+
+> **⑤ 为什么必须有**：真实合同（政府采购、建设工程这类有固定模板的）常常**没有**
+> 准据法条款——默认就是中国法，谁也不会另写一条「本合同适用中华人民共和国法律」。
+> 只认 ① 的四条检索词，这类合同一律落到 `undetermined`，于是不加载任何法域包、
+> 不读任何法条，整条法域链断在第一步。这个缺口在人工构造的语料上永远暴露不出来，
+> 因为写语料的人一定会写准据法条款。
+>
+> **⑤ 的两条边界**：
+> 1. 只认**该法域特有**的立法。`cited_statute_exclusions` 里的国际公约、
+>    INCOTERMS 之类不指向单一法域，不得据以推定。
+> 2. **援引已废止的法，法域线索照样成立**。写《合同法》说明当事人意图适用中国法，
+>    只是引错版本——「指向哪个法域」与「这部法还有没有效」是两个独立判断，
+>    不得互相抵消：法域照推定，失效另作为独立风险项报出（`FOCUS-JUR-*`）。
 
 线索用 `Grep` 在原文逐类检索，检索词取自各包 `pack.yaml#jurisdiction.detection_clues`
 （`governing_law_texts` / `forum_texts` / `data_regimes` / `party_domicile_hints` / `document_type_hints`）。
@@ -191,8 +206,14 @@ J8 用 `Grep` 在**已落盘的产物文件**上逐条检索，命中即产物�
 | 出口 | 条件 | 后续 |
 |---|---|---|
 | `determined` | 有且仅有一条 `governing_law` 边，法域明确 | 进 J3 |
-| `presumed` | 无 `governing_law` 边，但当事方住所地一致 | 按住所地推定并加载对应包，**必须标注「准据法未明示，按注册地推定」并触发人工确认**（`rules.md#R-021` 例外） |
-| `undetermined` | 有两条及以上互斥的 `governing_law` 边，或线索为空且住所地不一致 | **`verdict: jurisdiction_undetermined`，`conclusion_lock` 保持 `locked`，不出任何合规结论**，直接跳到 J5 做冲突记录，再进 J8 落盘 |
+| `presumed` | 无 `governing_law` 边，但**①之外的线索指向同一法域**：援引的实体法（⑤）全部属于同一法域，或当事方住所地一致 | 按该法域推定并加载对应包，**必须标注推定依据的具体线索类型与证据**（「准据法未明示，据正文援引《中华人民共和国政府采购法》推定」/「按注册地推定」）并触发人工确认（`rules.md#R-021` 例外） |
+| `undetermined` | 有两条及以上互斥的 `governing_law` 边，或**①②④⑤ 全部为空**，或不同类线索指向互斥法域 | **`verdict: jurisdiction_undetermined`，`conclusion_lock` 保持 `locked`，不出任何合规结论**，直接跳到 J5 做冲突记录，再进 J8 落盘 |
+
+> ⚠️ **`undetermined` 的判据是「线索为空」，不是「没有准据法条款」。** 走这个出口前
+> 必须确认 ⑤ 也检索过且零命中——把「没写准据法条款」直接等同于「法域不明」，
+> 会让所有依模板起草的真实合同全部卡在第一步。
+> `presumption_not_applied_reason` 里必须写清**每一类线索**分别为何不成立，
+> 只写「缺少注册地证据」不算完整。
 
 `undetermined` 出口下**仍然要做 J5 冲突判定**——「说不清适用哪个法」本身就是必须报告的事实，
 而且它正是 `HG-02` 的触发条件。跳过 J5 会让最严重的问题连同法域一起消失。
