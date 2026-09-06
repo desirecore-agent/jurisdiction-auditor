@@ -66,8 +66,8 @@
   "command_authority": {
     "enabled": true,
     "allowed_targets": [
-      "contract-review-lead",
-      "review-reporter"
+      "he-tong-shen-cha-tong-chou-guan",
+      "he-tong-fu-he-chu-bao-gao-guan"
     ]
   },
   "default_enabled": {
