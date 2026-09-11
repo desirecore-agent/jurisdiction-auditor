@@ -135,19 +135,23 @@ J8 用 `Grep` 在**已落盘的产物文件**上逐条检索，命中即产物�
 | 上游链路的受理结论 ∈ {`passed`, `conditional`} | 拒绝启动（`blocked` 时流水线已终止） |
 | `object` 三元组齐备（`contract_object_id` + `version_label` + `content_digest`） | 拒绝启动，回报「对象身份不完整」 |
 | `artifact_path`（条款抽取产物）可读，`parts[].source` 全部可读 | 拒绝启动，回报缺失的绝对路径 |
+| Team O3 交接的五个 review-context 字段齐备且与当前 Lead context 完全一致 | 不得降级，回报 `REJECT-STALE-REVIEW-CONTEXT` |
 
 **J1 的动作**
 
 1. `Read` 上游交接块与 `artifact_path` 指向的抽取产物。
-2. `Ls` 确认有效工作目录，取绝对路径备用。**不要在提示词或产物里写死任何用户主目录字面量。**
-3. `GenerateUUID` 生成 `audit_id`，格式 `AUDIT-<YYYYMMDD>-<uuid 前 8 位>`。
-4. 原样抄录 `object`、`scope.frozen_baseline`、`scope.consistency_conclusion_allowed`——**逐字复制，不重新校验、不改写**。
-5. 把上游 `pending[]` 逐条登记为待兑现项；`must_escalate: true` 的每一条在你的交接块里必须原样出现。
+2. Team O3 路径必须有且只消费扁平的 `review_context_path`、`review_context_case_id`、`review_context_revision`、`review_context_current_manifest`、`review_context_output_constraints`。`Read` path 后解析 context，并逐项比较 `case_binding.case_id`、`revision`、`case_binding.current_contract_manifest` 与完整四项 `output_constraints`。任一字段缺失、读取/解析失败或值不完全相等，停止并回报 `REJECT-STALE-REVIEW-CONTEXT`；不得用旧摘要、文件名、上一次回执或自行填写字段降级。
+3. `Ls` 确认有效工作目录，取绝对路径备用。**不要在提示词或产物里写死任何用户主目录字面量。**
+4. `GenerateUUID` 生成 `audit_id`，格式 `AUDIT-<YYYYMMDD>-<uuid 前 8 位>`。
+5. 原样抄录 `object`、`scope.frozen_baseline`、`scope.consistency_conclusion_allowed`——**逐字复制，不重新校验、不改写**。
+6. 把上游 `pending[]` 逐条登记为待兑现项；`must_escalate: true` 的每一条在你的交接块里必须原样出现。
 
 **你从上游拿到什么、不拿什么**
 
 `confirmed[]` 里的事实直接使用，不重复校验（重复校验会得出与上游不同的结论，破坏「同一个对象」）。
 上游 `do_not_pass` 列出的内容你不去找：不读对话历史，不读上游的推理过程与中间草稿。
+
+独立用户请求没有 Team O3 handoff 时，绝不伪造 context 或 `review_context_echo`。它仍可进行原文事实提取并向用户澄清，但不得把缺 context 描述为平台未签发、身份/代表授权、最终适用法或 Human Gate 状态。
 
 > 上游 `confirmed[]` 里那条**「法域线索：准据法为中国法（16.1，第 6 页），规则包 cn-v3 匹配」**
 > 是事实陈述，不是授权。**「上游说匹配」不等于「确实匹配」**——J3 必须自己拿实际加载的
@@ -158,6 +162,21 @@ J8 用 `Grep` 在**已落盘的产物文件**上逐条检索，命中即产物�
 ## J2 法域识别（**必须在加载规则包之前完成**）
 
 这一步回答唯一一个问题：**这份合同受哪个（些）法域约束？**
+
+### Team review-context 的受限审查基准
+
+Team 路径先以已在 J1 核验的 context 为准；它限制本次可发出的审查结论，并不认证法域事实。
+
+| context `jurisdiction` | 可做的事 | 禁止的事 |
+|---|---|---|
+| `candidate_basis`，且唯一候选的 `pack.status = read_and_pinned`、`service_scope = supported` | 使用 context 指定的 `pack_path`、`rules_path`、版本和 SHA 复核后，作为**候选审查基准**加载该包；实体匹配可在 `jurisdiction_substantive_conclusion = allowed` 时进行 | 不得称候选为最终准据法、论坛结论、用户代表权或 Human Gate 批准 |
+| `undetermined` | 继续逐字抽取合同线索、登记澄清需要与事实；`jurisdiction_substantive_conclusion = not_issued_missing_jurisdiction` | 不得按住所地、常见模板、文件名或其他默认规则选择包或输出实体法结论 |
+| `conflicting` | 保留全部 context candidates 与 `HG-02`，登记冲突原文；`jurisdiction_substantive_conclusion = not_issued_hg_02_conflict` | 不得择一候选、消除/确认 HG-02，或用任何一包的实体结论填补冲突 |
+| 已识别候选但 `pack.status = unavailable` | 原样保留 `RULE_SOURCE_UNAVAILABLE` 与 `required_from: lead`；`jurisdiction_substantive_conclusion = not_issued_rule_source_unavailable`，按既有规则源失败停住 | 不得把它改写成用户材料缺失、用户澄清债务或全 blank 通过 |
+
+所有 Team 路径都保留 `factual_extraction: allowed` 的原文工作。`output_constraints` 只描述允许的输出范围，不授予读取权限、模型/工具权限、Delegate 续接、代表资格或 Human Gate 状态。
+
+旧的 `determined` / `presumed` / `undetermined` 表仅适用于没有 Team context 的独立用户事实/澄清路径；它不得被用来覆盖已经核验的 Team context。
 
 ### 判据：四类线索，按证明力排序
 
@@ -817,10 +836,10 @@ jurisdiction:
 
   # ── J2 法域识别 ──
   jurisdiction_determination:
-    outcome: determined                     # determined | presumed | undetermined
+    outcome: candidate_basis                # Team 候选审查基准；不是最终适用法
     primary_jurisdiction: jurisdiction-cn
-    basis: 明示准据法（12.1，第 5 页）
-    presumption_note: null                  # presumed 时必填「准据法未明示，按注册地推定」
+    basis: 当前合同 part 线索（12.1，第 5 页）；仅作受限审查基准
+    presumption_note: null
     clues: [JUR-CLUE-01, JUR-CLUE-02, JUR-CLUE-03]
 
   governed_by_edges: [...]                  # J2 的 JUR-CLUE-* 全量
@@ -837,6 +856,12 @@ jurisdiction:
   conclusion_lock: unlocked
   compliance_conclusion_allowed: true
   lock_reason: null
+
+  not_issued:                               # Team context 禁止实体结论时保留；不是 unknown 或授权状态
+    jurisdiction_substantive_conclusion: not_issued_missing_jurisdiction
+    pending:
+      - code: PEND-JURISDICTION-BASIS-REQUIRED
+        required_from: user
 
   version_matrix:                           # 五维 + 本体版本，逐项登记
     skill_version: 1.0.0
@@ -873,6 +898,17 @@ jurisdiction:
 
   verdict: audited                          # audited | jurisdiction_undetermined
                                             # | blocked_version_mismatch | blocked_missing_pack
+  review_context_echo:                      # 仅 Team O3 路径，独立请求不得伪造
+    case_id: case-20260911-001
+    revision: 2
+    current_manifest:
+      status: available
+      digest: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    actual_output_constraints:
+      factual_extraction: allowed
+      directional_risk_advice: allowed
+      redline_or_negotiation_advice: allowed
+      jurisdiction_substantive_conclusion: allowed
   handoff: {...}
 ```
 
