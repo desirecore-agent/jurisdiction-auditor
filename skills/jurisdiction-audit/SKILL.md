@@ -141,10 +141,11 @@ J8 用 `Grep` 在**已落盘的产物文件**上逐条检索，命中即产物�
 
 1. `Read` 上游交接块与 `artifact_path` 指向的抽取产物。
 2. Team O3 路径必须有且只消费扁平的 `review_context_path`、`review_context_case_id`、`review_context_revision`、`review_context_current_manifest`、`review_context_output_constraints`。`Read` path 后解析 context，并逐项比较 `case_binding.case_id`、`revision`、`case_binding.current_contract_manifest` 与完整四项 `output_constraints`。任一字段缺失、读取/解析失败或值不完全相等，停止并回报 `REJECT-STALE-REVIEW-CONTEXT`；不得用旧摘要、文件名、上一次回执或自行填写字段降级。
-3. `Ls` 确认有效工作目录，取绝对路径备用。**不要在提示词或产物里写死任何用户主目录字面量。**
-4. `GenerateUUID` 生成 `audit_id`，格式 `AUDIT-<YYYYMMDD>-<uuid 前 8 位>`。
-5. 原样抄录 `object`、`scope.frozen_baseline`、`scope.consistency_conclusion_allowed`——**逐字复制，不重新校验、不改写**。
-6. 把上游 `pending[]` 逐条登记为待兑现项；`must_escalate: true` 的每一条在你的交接块里必须原样出现。
+3. 在读取任何规则包、`rules_path` 或法条前，检查唯一 `candidate_basis.pack.status`，或 `conflicting` 的每个 `candidate_bases[].pack.status`。只要任一为 `not_prechecked`，原样保留 `PEND-JURISDICTION-PACK-PREFLIGHT` 和既有 `HG-02`（如有），返回失败诊断 `REJECT-UNPRECHECKED-REVIEW-CONTEXT` 并停止。不得自行读取包、pin、预检或选择候选来补救；不得输出审计成功回执、实体结论、业务产物或下游交接。`not_issued_pack_preflight_pending` 是此次受限 O0 的拒绝边界，不是本技能的正常运行状态。
+4. `Ls` 确认有效工作目录，取绝对路径备用。**不要在提示词或产物里写死任何用户主目录字面量。**
+5. `GenerateUUID` 生成 `audit_id`，格式 `AUDIT-<YYYYMMDD>-<uuid 前 8 位>`。
+6. 原样抄录 `object`、`scope.frozen_baseline`、`scope.consistency_conclusion_allowed`——**逐字复制，不重新校验、不改写**。
+7. 把上游 `pending[]` 逐条登记为待兑现项；`must_escalate: true` 的每一条在你的交接块里必须原样出现。
 
 **你从上游拿到什么、不拿什么**
 
@@ -170,11 +171,12 @@ Team 路径先以已在 J1 核验的 context 为准；它限制本次可发出�
 | context `jurisdiction` | 可做的事 | 禁止的事 |
 |---|---|---|
 | `candidate_basis`，且唯一候选的 `pack.status = read_and_pinned`、`service_scope = supported` | 使用 context 指定的 `pack_path`、`rules_path`、版本和 SHA 复核后，作为**候选审查基准**加载该包；实体匹配可在 `jurisdiction_substantive_conclusion = allowed` 时进行 | 不得称候选为最终准据法、论坛结论、用户代表权或 Human Gate 批准 |
+| 唯一 `candidate_basis` 或 `conflicting` 的任一候选 `pack.status = not_prechecked` | 只返回 `REJECT-UNPRECHECKED-REVIEW-CONTEXT`，并保留 `PEND-JURISDICTION-PACK-PREFLIGHT` 与既有 `HG-02` | 不得读包/规则、预检、pin、择一候选、写成功回执或任何业务成果 |
 | `undetermined` | 继续逐字抽取合同线索、登记澄清需要与事实；`jurisdiction_substantive_conclusion = not_issued_missing_jurisdiction` | 不得按住所地、常见模板、文件名或其他默认规则选择包或输出实体法结论 |
 | `conflicting` | 保留全部 context candidates 与 `HG-02`，登记冲突原文；`jurisdiction_substantive_conclusion = not_issued_hg_02_conflict` | 不得择一候选、消除/确认 HG-02，或用任何一包的实体结论填补冲突 |
 | 已识别候选但 `pack.status = unavailable` | 原样保留 `RULE_SOURCE_UNAVAILABLE` 与 `required_from: lead`；`jurisdiction_substantive_conclusion = not_issued_rule_source_unavailable`，按既有规则源失败停住 | 不得把它改写成用户材料缺失、用户澄清债务或全 blank 通过 |
 
-所有 Team 路径都保留 `factual_extraction: allowed` 的原文工作。`output_constraints` 只描述允许的输出范围，不授予读取权限、模型/工具权限、Delegate 续接、代表资格或 Human Gate 状态。
+除 `not_prechecked` 的拒绝路径外，Team 路径都保留 `factual_extraction: allowed` 的原文工作。`output_constraints` 只描述允许的输出范围，不授予读取权限、模型/工具权限、Delegate 续接、代表资格或 Human Gate 状态。
 
 旧的 `determined` / `presumed` / `undetermined` 表仅适用于没有 Team context 的独立用户事实/澄清路径；它不得被用来覆盖已经核验的 Team context。
 

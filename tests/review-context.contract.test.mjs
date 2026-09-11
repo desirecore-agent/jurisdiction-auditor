@@ -27,6 +27,8 @@ test('source-only: parses Lead template and preserves missing-jurisdiction const
   assert.equal(template.output_constraints.jurisdiction_substantive_conclusion, 'not_issued_missing_jurisdiction')
   assert.equal(schema.definitions.outputConstraints.properties.jurisdiction_substantive_conclusion.enum.includes('not_issued_hg_02_conflict'), true)
   assert.equal(schema.definitions.outputConstraints.properties.jurisdiction_substantive_conclusion.enum.includes('not_issued_rule_source_unavailable'), true)
+  assert.equal(schema.definitions.packNotPrechecked.properties.status.const, 'not_prechecked')
+  assert.equal(schema.definitions.outputConstraints.properties.jurisdiction_substantive_conclusion.enum.includes('not_issued_pack_preflight_pending'), true)
 })
 
 test('source-only: jurisdiction consumer keeps candidate, conflict, and source-failure paths distinct', async () => {
@@ -48,6 +50,10 @@ test('source-only: jurisdiction consumer keeps candidate, conflict, and source-f
   assert.ok(skill.includes('candidate_basis'))
   assert.ok(skill.includes('RULE_SOURCE_UNAVAILABLE'))
   assert.ok(skill.includes('HG-02'))
+  assert.ok(skill.includes('REJECT-UNPRECHECKED-REVIEW-CONTEXT'))
+  assert.ok(skill.includes('PEND-JURISDICTION-PACK-PREFLIGHT'))
+  assert.ok(skill.includes('candidate_bases[].pack.status'))
+  assert.ok(skill.includes('不得自行读取包、pin、预检或选择候选来补救'))
   assert.ok(principles.includes('不是最终准据法'))
   const schema = JSON.parse(schemaText)
   const candidate = schema.definitions.jurisdiction.oneOf.find(({ properties }) => properties?.status?.const === 'candidate_basis')
