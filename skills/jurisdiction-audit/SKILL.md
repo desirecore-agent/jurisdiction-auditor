@@ -37,7 +37,7 @@ metadata:
   updated_at: '2026-08-31'
   pipeline_stage: 4
   upstream: clause-extractor
-  downstream: [contract-review-lead, review-reporter]
+  downstream: [contract-review-lead]
   runs_parallel_with: risk-scanner
   ontology_ref: shared/resources/business-ontology/contract.yaml
   packs_ref: shared/resources/jurisdiction-packs/
@@ -127,23 +127,23 @@ J8 用 `Grep` 在**已落盘的产物文件**上逐条检索，命中即产物�
 
 ## J1 上游核验与启动前置条件
 
-**不满足任一条即拒绝启动**，回报 `contract-review-lead`，不产出任何结论：
+**不满足任一条即拒绝启动**，只向同步 `contract-review-lead` return 失败事实，不产出任何结论：
 
 | 前置条件 | 不满足时 |
 |---|---|
-| 上游 `handoff` 块存在，`from: clause-extractor` | 拒绝启动，回报「缺交接块」 |
+| 上游 `handoff` 块存在，`from: clause-extractor` | 拒绝启动，向同步 Lead return「缺交接块」 |
 | 上游链路的受理结论 ∈ {`passed`, `conditional`} | 拒绝启动（`blocked` 时流水线已终止） |
-| `object` 三元组齐备（`contract_object_id` + `version_label` + `content_digest`） | 拒绝启动，回报「对象身份不完整」 |
-| `artifact_path`（条款抽取产物）可读，`parts[].source` 全部可读 | 拒绝启动，回报缺失的绝对路径 |
-| Team O3 交接的五个 review-context 字段齐备且与当前 Lead context 完全一致 | 不得降级，回报 `REJECT-STALE-REVIEW-CONTEXT` |
+| `object` 三元组齐备（`contract_object_id` + `version_label` + `content_digest`） | 拒绝启动，向同步 Lead return「对象身份不完整」 |
+| `artifact_path`（条款抽取产物）可读，`parts[].source` 全部可读 | 拒绝启动，向同步 Lead return 缺失的绝对路径 |
+| Team O3 交接的五个 review-context 字段齐备且与当前 Lead context 完全一致 | 不得降级，向同步 Lead return `REJECT-STALE-REVIEW-CONTEXT` |
 
 **J1 的动作**
 
 1. `Read` 上游交接块与 `artifact_path` 指向的抽取产物。
-2. Team O3 路径必须有且只消费扁平的 `review_context_path`、`review_context_case_id`、`review_context_revision`、`review_context_current_manifest`、`review_context_output_constraints`。`Read` path 后解析 context，并逐项比较 `case_binding.case_id`、`revision`、`case_binding.current_contract_manifest` 与完整四项 `output_constraints`。任一字段缺失、读取/解析失败或值不完全相等，停止并回报 `REJECT-STALE-REVIEW-CONTEXT`；不得用旧摘要、文件名、上一次回执或自行填写字段降级。
+2. Team O3 路径必须有且只消费扁平的 `review_context_path`、`review_context_case_id`、`review_context_revision`、`review_context_current_manifest`、`review_context_output_constraints`。`Read` path 后解析 context，并逐项比较 `case_binding.case_id`、`revision`、`case_binding.current_contract_manifest` 与完整四项 `output_constraints`。任一字段缺失、读取/解析失败或值不完全相等，停止并向同步 Lead return `REJECT-STALE-REVIEW-CONTEXT`；不得用旧摘要、文件名、上一次回执或自行填写字段降级。
 3. 在读取任何规则包、`rules_path` 或法条前，检查唯一 `candidate_basis.pack.status`，或 `conflicting` 的每个 `candidate_bases[].pack.status`。只要任一为 `not_prechecked`，原样保留 `PEND-JURISDICTION-PACK-PREFLIGHT` 和既有 `HG-02`（如有），返回失败诊断 `REJECT-UNPRECHECKED-REVIEW-CONTEXT` 并停止。不得自行读取包、pin、预检或选择候选来补救；不得输出审计成功回执、实体结论、业务产物或下游交接。`not_issued_pack_preflight_pending` 是此次受限 O0 的拒绝边界，不是本技能的正常运行状态。
-4. `Ls` 确认有效工作目录，取绝对路径备用。**不要在提示词或产物里写死任何用户主目录字面量。**
-5. `GenerateUUID` 生成 `audit_id`，格式 `AUDIT-<YYYYMMDD>-<uuid 前 8 位>`。
+4. 团队 O3 路径只对当前 team effective cwd 执行 `Ls` 并使用实际绝对路径；独立非 Team 运行才确认自己的 workspace。**不要在提示词或产物里写死任何用户主目录字面量。**
+5. `GenerateUUID` 的实际完整返回值是本次 `audit_uuid`；`audit_id` 仅可为固定 `AUDIT-` 前缀加该完整 UUID，不得插入日期、截短、从 task/path/旧回执推断或猜测成员绑定。
 6. 原样抄录 `object`、`scope.frozen_baseline`、`scope.consistency_conclusion_allowed`——**逐字复制，不重新校验、不改写**。
 7. 把上游 `pending[]` 逐条登记为待兑现项；`must_escalate: true` 的每一条在你的交接块里必须原样出现。
 
@@ -371,7 +371,7 @@ temporal_gate:
   human_gate: HG-02
 ```
 
-3. `verdict: blocked_version_mismatch`，交接块 `to: null`，回报 `contract-review-lead`。
+3. `verdict: blocked_version_mismatch`，交接块 `to: null`，向同步 `contract-review-lead` return 失败事实。
 4. **不输出任何以 `cn-v1` 为依据的合规结论**——包括「用现有版本先看一下」。
    规则包与合同法域对不上时，产出的不是「不够准的结论」，是**指向另一个法律体系的结论**。
 
@@ -770,12 +770,11 @@ JUR-RULE-* 条目（含四元组 + 置信度转述）
 ### 落盘位置
 
 ```
-<有效工作目录>/contract-review/<contract_object_id>/jurisdiction/<audit_id>/jurisdiction.yaml
+Team O3: <实际确认的 team effective cwd>/members/jurisdiction-auditor/<已核对的 review_context_case_id>/<真实 audit_uuid>/artifact/jurisdiction.yaml
+独立运行: <本 Agent 已确认的 workspace>/contract-review/<contract_object_id>/jurisdiction/<audit_id>/jurisdiction.yaml
 ```
 
-**文件名固定为 `jurisdiction.yaml`**——`review-reporter` 的 `artifacts.jurisdiction_report`
-按这个名字取。`<有效工作目录>` 用 `Ls` 实际确认后取绝对路径，
-**不要在提示词或产物里写死任何用户主目录字面量**。
+**文件名固定为 `jurisdiction.yaml`**——Lead 之后向 `review-reporter` 交接时才在 `artifacts.jurisdiction_report` 中提供该路径。团队 O3 必须只对当前 effective cwd 做 `Ls` 实际确认，逐字复用已核对的 `review_context_case_id`（不是另设的 `handoff.case_id`），并将本次真实 `audit_uuid` 用作 member-owned 子树；不得写入 Lead `contract-review/**`、其他成员路径，猜测 ID/binding，或为新父目录循环 `Ls`/调用 shell。独立非 Team 运行保持自己的已确认 workspace。
 
 旧产物**保留不覆盖**。规则包版本、法域判定或上游受理结论变化时**整套重跑**、生成新的 `audit_id`，
 不做增量修补——法域是全局前提，前提变了所有结论一起失效。
@@ -814,7 +813,7 @@ Grep 固定字符串：合规无异常 / 未发现异常 / 合规稽核通过 / 
 ```yaml
 jurisdiction:
   # ── 身份与版本 ──
-  audit_id: AUDIT-20260331-9d24f1a0
+  audit_id: AUDIT-<audit-uuid>
   audited_at: 2026-03-31T11:20:44+08:00
   executed_by: jurisdiction-auditor
   skill: jurisdiction-audit@1.0.0
@@ -918,10 +917,10 @@ jurisdiction:
 
 | `verdict` | 触发 | `conclusion_lock` | `handoff.to` |
 |---|---|---|---|
-| `audited` | 正常完成 | `unlocked` | `[contract-review-lead, review-reporter]` |
-| `jurisdiction_undetermined` | J2 出口 `undetermined` | `locked` | `[contract-review-lead]`，附冲突与对齐建议 |
-| `blocked_version_mismatch` | J3.2 校验 B 不通过 | `locked` | `[contract-review-lead]`，附 `JUR-ALIGN-*` |
-| `blocked_missing_pack` | J3.2 校验 A 不通过（线索指向的包不存在） | `locked` | `[contract-review-lead]`，附缺哪个包 |
+| `audited` | 正常完成 | `unlocked` | `contract-review-lead`（仅同步 return） |
+| `jurisdiction_undetermined` | J2 出口 `undetermined` | `locked` | `contract-review-lead`（仅同步 return，附冲突与对齐建议） |
+| `blocked_version_mismatch` | J3.2 校验 B 不通过 | `locked` | `contract-review-lead`（仅同步 return，附 `JUR-ALIGN-*`） |
+| `blocked_missing_pack` | J3.2 校验 A 不通过（线索指向的包不存在） | `locked` | `contract-review-lead`（仅同步 return，附缺哪个包） |
 
 后三态**一律不向 `review-reporter` 投递合规结论**。组长按 `review-orchestration#O3`
 把法域类 `check_id` 全部记 `blocked`，`release_to_legal` 禁止。
@@ -938,24 +937,24 @@ jurisdiction:
 
 | 收件方 | 方式 | 内容 |
 |---|---|---|
-| `contract-review-lead` | `SendMessage` | 完成回报 + 产物绝对路径 + `stats` + `verdict` |
+| `contract-review-lead` | 同步调用 return | 产物绝对路径 + `stats` + `verdict` + 结构化 handoff 数据 |
 | `review-reporter` | **不投递结论** | 只由组长告知产物路径，它自行从磁盘读取并**重新取证** |
 | `risk-scanner` | **不投递** | 并行支线，互不读对方结论 |
 
-> ⚠️ **不得用 `Delegate` / `SendMessage` 把结论直接推给 `review-reporter`。**
+> ⚠️ 本 Agent 不调度或主动回报。`contract-review-lead` 是唯一 O3/O4 编排、账本和下游派发者；不得用 `Delegate` / `SendMessage` 向任何 Agent 推送结论。
 > 蓝本第二节要求复核 Agent「基于原文与结构化事实重新判断，**不读前序推理**」。
 > 最干净的保证不是发一份贫瘠的交接，而是**根本没有这条通道**。
 >
-> ⚠️ **禁止用 `Delegate` 的 `subtask` 模式**联系复核环节：它继承完整对话历史，正好违背独立复核约束。
+> ⚠️ 同步 return 只包含最终 artifact 的绝对路径、结构化 handoff、`stats`、`verdict`、`pending` 与失败事实；不含对话历史、推理过程、中间草稿或未验证的结论。
 
 ### 交接块结构
 
 ```yaml
 handoff:
-  to: [contract-review-lead]
+  to: contract-review-lead
   from: jurisdiction-auditor
-  audit_id: AUDIT-20260331-9d24f1a0
-  artifact_path: /abs/.../contract-review/YCIT-DPA-2025-0311/jurisdiction/AUDIT-20260331-9d24f1a0/jurisdiction.yaml
+  audit_id: AUDIT-<audit-uuid>
+  artifact_path: /abs/.../members/jurisdiction-auditor/<review-context-case-id>/<audit-uuid>/artifact/jurisdiction.yaml
   upstream_artifact_path: /abs/.../EXTRACT-20260331-4b81ce07.extraction.yaml
 
   object:                                 # 交接对象编号（原样承自上游，不改写）
@@ -1031,7 +1030,7 @@ handoff:
     - 任何未在知识包中登记的法条编号、司法解释文号或判例名称
 ```
 
-**交接方式硬规则**：引用的所有文件必须写**绝对路径**——下游 Agent 的工作目录与你不同。
+**回传硬规则**：引用的所有文件必须写**绝对路径**。本 Agent 只 return 给同步 Lead 调用方；Lead 独立复核 review-context echo、RC/HG，并决定是否派发下游，不能把本 return 当作已调度、已登记或 Human Gate 通过。
 
 ---
 

@@ -60,3 +60,24 @@ test('source-only: jurisdiction consumer keeps candidate, conflict, and source-f
   assert.ok(candidate)
   assert.equal(candidate.properties.candidate_basis.$ref, '#/definitions/candidateBasis')
 })
+
+test('source-only: jurisdiction return uses a member-owned Team path and cannot schedule children', async () => {
+  const [agentText, skill, persona, principles] = await Promise.all([
+    readFile(path.join(agentRoot, 'agent.json'), 'utf8'),
+    readFile(path.join(agentRoot, 'skills', 'jurisdiction-audit', 'SKILL.md'), 'utf8'),
+    readFile(path.join(agentRoot, 'persona.md'), 'utf8'),
+    readFile(path.join(agentRoot, 'principles.md'), 'utf8'),
+  ])
+  const agent = JSON.parse(agentText)
+  assert.equal(agent.command_authority.enabled, false)
+  assert.deepEqual(agent.command_authority.allowed_targets, [])
+  assert.equal(agent.tool_permissions.allowed.includes('Delegate'), false)
+  assert.equal(agent.tool_permissions.allowed.includes('SendMessage'), false)
+  assert.match(skill, /members\/jurisdiction-auditor\/<已核对的 review_context_case_id>\/<真实 audit_uuid>\/artifact\/jurisdiction\.yaml/)
+  assert.match(skill, /`review_context_case_id`（不是另设的 `handoff.case_id`）/)
+  assert.match(skill, /不得写入 Lead `contract-review\/\*\*`、其他成员路径，猜测 ID\/binding/)
+  assert.match(skill, /独立非 Team 运行保持自己的已确认 workspace/)
+  assert.match(skill, /同步调用 return/)
+  assert.match(persona, /仅 return 最终数据给同步 Lead/)
+  assert.match(principles, /只向同步 Lead return，Lead 是唯一派发者/)
+})

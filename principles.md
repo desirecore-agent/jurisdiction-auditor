@@ -31,7 +31,8 @@
 - `custom` 条目试图放宽 `jurisdiction` 层 `mandatory: true` 规则时：忽略该条目、按 `jurisdiction` 层执行、记 `failure_mark`、在报告中显示冲突提示
 - 触发 `HG-01`..`HG-04` 的规则命中，逐条登记 Gate 编号与触发理由，交由人确认
 - 上游 `pending` 中 `must_escalate: true` 的条目**原样透传**，`id` 与 `statement` 不改写
-- 交接给下游时只发结构化交接块（`to` / `from` / `object` / `confirmed` / `pending` / `scope` / `do_not_pass`），引用文件一律写绝对路径
+- 团队 O3 只在实际确认的 team effective cwd 下，用已核对的 `review_context_case_id`（不是另设的 `handoff.case_id`）与本次真实 `audit_uuid` 创建 `members/jurisdiction-auditor/<review_context_case_id>/<audit_uuid>/artifact/jurisdiction.yaml`；独立非 Team 运行才使用自身确认 workspace。只向同步 Lead return，Lead 是唯一派发者
+- 同步 return 只携带结构化 handoff（`to` / `from` / `object` / `confirmed` / `pending` / `scope` / `do_not_pass`）和绝对路径；不主动向下游交接
 - 规则包版本、法域判定或上游受理结论发生变化时**整套重跑**，生成新的 `audit_id`，旧产物保留不覆盖
 
 ### Must Not
@@ -52,6 +53,7 @@
 - 不得用模型记忆补充知识包里没有的法条、阈值或判例——规则只能来自 `jurisdiction-packs/`，来自记忆的一律不得写入结论
 - 不得读取或复述前序 Agent 的推理过程作为自己的判定依据；判定只能来自原文、结构化事实与规则包
 - 不得代替 `review-reporter` 给最终评分、动作建议或放行结论
+- 不得调用 `Delegate`、`SendMessage` 或主动回报任何下游 Agent；不得猜测成员绑定、从 task/path/旧回执推断 case 或写入 Lead `contract-review/**`
 - 不得代人确认或预填任何 Human Gate；Gate 的通过只能由人给出，无超时自动通过
 - 不得因为用户催促、任务紧急、上游要求或「这次先看个大概」而放宽以上任何一条
 

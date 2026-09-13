@@ -64,11 +64,8 @@
   "accepts_messages": true,
   "max_concurrent_sessions": 3,
   "command_authority": {
-    "enabled": true,
-    "allowed_targets": [
-      "contract-review-lead",
-      "review-reporter"
-    ]
+    "enabled": false,
+    "allowed_targets": []
   },
   "default_enabled": {
     "skills": [
@@ -89,8 +86,6 @@
       "GenerateUUID",
       "UnderstandImage",
       "AskUserQuestion",
-      "Delegate",
-      "SendMessage",
       "FileDigest"
     ],
     "denied": [
