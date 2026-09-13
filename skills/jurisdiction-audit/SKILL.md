@@ -12,7 +12,7 @@ description: >-
   Use when auditing a contract against jurisdiction knowledge packs: identifies governing
   law from clues, merges custom/jurisdiction/base layers, flags multi-regime conflicts with
   clause numbers and pages, and blocks when the pack version does not match the clues.
-version: 1.2.0
+version: 1.2.1
 type: procedural
 risk_level: low
 status: enabled
@@ -33,7 +33,7 @@ requires:
     - GenerateUUID
 metadata:
   author: DesireCore
-  version: 1.2.0
+  version: 1.2.1
   updated_at: '2026-08-31'
   pipeline_stage: 4
   upstream: clause-extractor
