@@ -12,7 +12,7 @@ description: >-
   Use when auditing a contract against jurisdiction knowledge packs: identifies governing
   law from clues, merges custom/jurisdiction/base layers, flags multi-regime conflicts with
   clause numbers and pages, and blocks when the pack version does not match the clues.
-version: 1.2.1
+version: 1.2.2
 type: procedural
 risk_level: low
 status: enabled
@@ -31,9 +31,10 @@ requires:
     - Write
     - MathCalc
     - GenerateUUID
+    - StructuredFileValidate
 metadata:
   author: DesireCore
-  version: 1.2.1
+  version: 1.2.2
   updated_at: '2026-08-31'
   pipeline_stage: 4
   upstream: clause-extractor
@@ -723,6 +724,27 @@ JUR-RULE-* 条目（含四元组 + 置信度转述）
 `gap_policy` 是各包的硬规定：**命中已知缺口领域时留白，禁止按通过计**（`contract.yaml#INV-012`）。
 `must_not_count_as_pass: true` 让这条约束在产物结构里可被机器检查，而不只是一句话。
 
+
+## J6.5 逐规则覆盖回执（coverage_updates）
+
+在 J4–J6 已读取当前固定 `rules_path` 后，读取其中的 `rules[]` 与 `conflicts[]`，对每个条目生成且只生成一条 `jurisdiction.coverage_updates[]`。每一条的闭合字段为：
+
+```yaml
+- rule_id: <当前 rules_path 中的原样 id>
+  section: rules | conflicts
+  check_source: <当前 rules_path>#rules/<rule_id>   # conflicts 同理
+  status: covered | not_applicable | blank | blocked | deferred
+  reason: <本次处理的事实理由>
+  evidence_refs:                                  # 同一 jurisdiction.yaml 内已存在的事实条目
+    - {collection: compliance_findings, id: JUR-RULE-01}
+```
+
+先在内存中构造发现集合 `rules` 与 `conflicts` 的精确三元组 `(rule_id, section, check_source)`：id 为空、同一 section 重复、未知 section、少项、多项或外来项，均不得落盘交接，直接 `HOLD`。不得把 `coverage_updates` 自己当作证据。每个 `evidence_refs` 必须能解析到本次同一产物中现有的 `governed_by_edges`、`compliance_findings`、`conflict_findings`、`coverage_gaps` 或 `human_gates` 集合及其 id；重复、悬空或跨产物引用均 `HOLD`。
+
+`covered` 仅说明该规则的**覆盖处理**有事实锚点，不表示法律安全、合规通过或 Human Gate 已通过。`not_applicable`、`blocked`、`deferred` 和 `covered` 必须写非空 `reason` 并至少有一条有效事实引用；不能因未发现冲突、未触发或缺资料而擅自写 `not_applicable`。`blank` 也必须写原因；只有原因明确是 `locked`、`unknown`、`unassessed` 或 `pending` 的留白，才可 `evidence_refs: []`。其他缺引用情形保持 `blank`，不得伪造 finding 或引用来填满回执。
+
+Draft-07 schema 只能验证这组数据的局部形状，**不能**证明上述动态规则集合、`check_source`、引用解析、法律结论或整个回执正确；这些逐项比较与解析是本步骤的运行时职责。所有规则处理完毕前不得以 handoff 的计数或路径替代实际数组读取。
+
 ---
 
 ## J7 Human Gate 登记与四元组自检
@@ -792,6 +814,12 @@ Grep 固定字符串：合规无异常 / 未发现异常 / 合规稽核通过 / 
 
 `conclusion_lock: unlocked` 时同样禁用 `合法有效` / `无法律风险` / `可以签署` 这一组定性表述
 （`rules.md#R-060` / `actions.yaml#release_to_legal.forbidden_wording`）——**有法域包也不代表你能做法律定性**。
+
+### coverage_updates 的局部 Schema 校验
+
+完成既有禁用措辞与结构一致性检查后，读取固定资源 `references/jurisdiction-coverage-updates.schema.json`，用 `StructuredFileValidate` 对刚写入并再次 `Read` 的同一 `jurisdiction.yaml` 执行 YAML 验证。调用只使用已确认的 artifact 绝对路径和该已启用 Skill 的固定 schema 路径；读取、写入、schema 或工具调用任一失败即 `HOLD`。
+
+只有 `success: true` 且 `valid: true` 才可继续。`valid: false` 时只允许依据诊断做一次自己的 `Edit` 修复；随后必须再次 `Read` 并重跑同一校验。第二次仍无效、任何不确定结果或修复后没有重新验证，均 `HOLD`，不得交接。该成功只证明 envelope 中 `jurisdiction.coverage_updates` 的局部字段形状；不证明整个 artifact、动态集合/引用、法律判断或结论锁正确。
 
 ### 结构一致性实检（闸门一 + 闸门二）
 
@@ -883,6 +911,7 @@ jurisdiction:
   alignment_advice:      [...]              # J3.2 的 JUR-ALIGN-*
   failure_marks:         [...]              # JUR-MARK-*（同优先级判定相反等）
   human_gates:           [...]              # J7 的 JUR-GATE-*
+  coverage_updates:      [...]              # J6.5：每个当前规则/冲突一条，局部形状由 v1 schema 校验
 
   summary: |                                # ← 下游会剥离本字段，关键事实不得只写在这里
     法域判定：中国法（cn-v1），依据 12.1（第 5 页）明示准据法。
@@ -956,6 +985,8 @@ handoff:
   from: jurisdiction-auditor
   audit_id: AUDIT-<audit-uuid>
   artifact_path: /abs/.../members/jurisdiction-auditor/<review-context-case-id>/<audit-uuid>/artifact/jurisdiction.yaml
+  coverage_updates_ref: /abs/.../jurisdiction.yaml#/jurisdiction/coverage_updates  # 非权威提示；Lead 仍须 Read artifact
+  coverage_updates_count: <实际数组长度>                                      # 非权威提示，不替代逐项核对
   upstream_artifact_path: /abs/.../EXTRACT-20260331-4b81ce07.extraction.yaml
 
   object:                                 # 交接对象编号（原样承自上游，不改写）
@@ -1085,6 +1116,8 @@ handoff:
 - [ ] 所加载包的 `known_gaps` 已逐条对照，命中的写了 `blank` + 「本包未覆盖」
 - [ ] `custom` 层无启用条目时，这个事实写进了报告而不是沉默略过
 - [ ] 没有把任何未检查项写成通过
+- [ ] `coverage_updates` 与本次读取的 `rules[]` / `conflicts[]` 精确一一对应，`check_source`、引用集合/id 均已逐项解析；留白仅按 J6.5 的受限原因无引用
+- [ ] 已对最终 Read 回的 artifact 跑过一次 `StructuredFileValidate`，且仅将其成功表述为 coverage_updates 局部形状有效
 
 **四元组与证据**
 

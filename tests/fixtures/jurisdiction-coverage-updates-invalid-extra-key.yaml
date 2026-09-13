@@ -1,0 +1,11 @@
+jurisdiction:
+  coverage_updates:
+    - rule_id: cn-rule-a
+      section: rules
+      check_source: /team/resources/rules.yaml#rules/cn-rule-a
+      status: covered
+      reason: 已按固定规则执行并形成法域事实条目
+      evidence_refs:
+        - collection: compliance_findings
+          id: JUR-RULE-01
+      unexpected: true

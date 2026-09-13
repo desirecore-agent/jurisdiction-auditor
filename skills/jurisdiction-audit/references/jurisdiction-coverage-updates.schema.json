@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Jurisdiction coverage updates envelope",
+  "description": "Validates only jurisdiction.coverage_updates inside a legacy jurisdiction artifact. Other artifact fields are intentionally not validated by this schema.",
+  "type": "object",
+  "required": ["jurisdiction"],
+  "additionalProperties": true,
+  "properties": {
+    "jurisdiction": {
+      "type": "object",
+      "description": "Legacy jurisdiction artifact envelope. Only coverage_updates is constrained here.",
+      "required": ["coverage_updates"],
+      "additionalProperties": true,
+      "properties": {
+        "coverage_updates": {
+          "type": "array",
+          "description": "One evidence-backed coverage disposition for each discovered rules[] or conflicts[] entry. Schema validation does not prove the runtime rule set, source equality, or referenced-entry existence.",
+          "maxItems": 8000,
+          "items": { "$ref": "#/definitions/coverageUpdate" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "ruleId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "description": "The exact identifier read from rules[] or conflicts[]; it is never invented or normalized."
+    },
+    "evidenceRef": {
+      "type": "object",
+      "description": "A compact reference to an existing, evidence-bearing entry in this same jurisdiction artifact; it is not duplicate legal evidence.",
+      "required": ["collection", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "collection": {
+          "type": "string",
+          "enum": ["governed_by_edges", "compliance_findings", "conflict_findings", "coverage_gaps", "human_gates"],
+          "description": "Existing artifact collection containing the referenced evidence-bearing entry."
+        },
+        "id": { "$ref": "#/definitions/ruleId", "description": "Exact existing entry id in the named collection." }
+      }
+    },
+    "coverageUpdate": {
+      "type": "object",
+      "description": "A coverage work-state only. covered means an evidence-backed rule disposition was completed, never that the contract is legally safe.",
+      "required": ["rule_id", "section", "check_source", "status", "reason", "evidence_refs"],
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": { "$ref": "#/definitions/ruleId" },
+        "section": {
+          "type": "string",
+          "enum": ["rules", "conflicts"],
+          "description": "The root rules.yaml array that supplied rule_id."
+        },
+        "check_source": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 1024,
+          "pattern": "^.+#(?:rules|conflicts)/[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "description": "Exact runtime <read_and_pinned rules_path>#<section>/<rule_id>. The Skill verifies cross-field equality."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["covered", "not_applicable", "blank", "blocked", "deferred"],
+          "description": "Existing five-state matrix work status. Unknown, locked, unassessed, or unresolved work remains blank."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "Concise evidence or non-disposition reason. It does not create a legal finding."
+        },
+        "evidence_refs": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/definitions/evidenceRef" },
+          "description": "References to existing evidence-bearing artifact entries. blank may be empty only for an explicit locked, unknown, unassessed, or pending reason."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "type": "object", "properties": { "status": { "const": "blank" } }, "required": ["status"] },
+          "then": { "type": "object", "properties": { "evidence_refs": { "type": "array", "maxItems": 8 } }, "required": ["evidence_refs"] },
+          "else": { "type": "object", "properties": { "evidence_refs": { "type": "array", "minItems": 1, "maxItems": 8 } }, "required": ["evidence_refs"] }
+        }
+      ]
+    }
+  }
+}
