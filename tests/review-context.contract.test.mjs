@@ -1,0 +1,83 @@
+// Source-contract test only: it parses Lead's actual template and schema but does not run an Agent.
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+import YAML from 'yaml'
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const contextDir = process.env.DESIRECORE_REVIEW_CONTEXT_DIR
+  ? path.resolve(process.env.DESIRECORE_REVIEW_CONTEXT_DIR)
+  : path.resolve(here, '..', '..', 'intake-gate-mapping', 'review-context')
+const agentRoot = path.resolve(here, '..')
+
+async function readContextContract() {
+  const [templateText, schemaText] = await Promise.all([
+    readFile(path.join(contextDir, 'review-context.template.yaml'), 'utf8'),
+    readFile(path.join(contextDir, 'review-context.schema.json'), 'utf8'),
+  ])
+  return { template: YAML.parse(templateText), schema: JSON.parse(schemaText) }
+}
+
+test('source-only: parses Lead template and preserves missing-jurisdiction constraints', async () => {
+  const { template, schema } = await readContextContract()
+  assert.equal(template.jurisdiction.status, 'undetermined')
+  assert.equal(template.output_constraints.factual_extraction, 'allowed')
+  assert.equal(template.output_constraints.jurisdiction_substantive_conclusion, 'not_issued_missing_jurisdiction')
+  assert.equal(schema.definitions.outputConstraints.properties.jurisdiction_substantive_conclusion.enum.includes('not_issued_hg_02_conflict'), true)
+  assert.equal(schema.definitions.outputConstraints.properties.jurisdiction_substantive_conclusion.enum.includes('not_issued_rule_source_unavailable'), true)
+  assert.equal(schema.definitions.packNotPrechecked.properties.status.const, 'not_prechecked')
+  assert.equal(schema.definitions.outputConstraints.properties.jurisdiction_substantive_conclusion.enum.includes('not_issued_pack_preflight_pending'), true)
+})
+
+test('source-only: jurisdiction consumer keeps candidate, conflict, and source-failure paths distinct', async () => {
+  const [skill, principles, schemaText] = await Promise.all([
+    readFile(path.join(agentRoot, 'skills', 'jurisdiction-audit', 'SKILL.md'), 'utf8'),
+    readFile(path.join(agentRoot, 'principles.md'), 'utf8'),
+    readFile(path.join(contextDir, 'review-context.schema.json'), 'utf8'),
+  ])
+  for (const field of [
+    'review_context_path',
+    'review_context_case_id',
+    'review_context_revision',
+    'review_context_current_manifest',
+    'review_context_output_constraints',
+    'review_context_echo',
+    'actual_output_constraints',
+    'REJECT-STALE-REVIEW-CONTEXT',
+  ]) assert.ok(skill.includes(field), `missing ${field}`)
+  assert.ok(skill.includes('candidate_basis'))
+  assert.ok(skill.includes('RULE_SOURCE_UNAVAILABLE'))
+  assert.ok(skill.includes('HG-02'))
+  assert.ok(skill.includes('REJECT-UNPRECHECKED-REVIEW-CONTEXT'))
+  assert.ok(skill.includes('PEND-JURISDICTION-PACK-PREFLIGHT'))
+  assert.ok(skill.includes('candidate_bases[].pack.status'))
+  assert.ok(skill.includes('不得自行读取包、pin、预检或选择候选来补救'))
+  assert.ok(principles.includes('不是最终准据法'))
+  const schema = JSON.parse(schemaText)
+  const candidate = schema.definitions.jurisdiction.oneOf.find(({ properties }) => properties?.status?.const === 'candidate_basis')
+  assert.ok(candidate)
+  assert.equal(candidate.properties.candidate_basis.$ref, '#/definitions/candidateBasis')
+})
+
+test('source-only: jurisdiction return uses a member-owned Team path and cannot schedule children', async () => {
+  const [agentText, skill, persona, principles] = await Promise.all([
+    readFile(path.join(agentRoot, 'agent.json'), 'utf8'),
+    readFile(path.join(agentRoot, 'skills', 'jurisdiction-audit', 'SKILL.md'), 'utf8'),
+    readFile(path.join(agentRoot, 'persona.md'), 'utf8'),
+    readFile(path.join(agentRoot, 'principles.md'), 'utf8'),
+  ])
+  const agent = JSON.parse(agentText)
+  assert.equal(agent.command_authority.enabled, false)
+  assert.deepEqual(agent.command_authority.allowed_targets, [])
+  assert.equal(agent.tool_permissions.allowed.includes('Delegate'), false)
+  assert.equal(agent.tool_permissions.allowed.includes('SendMessage'), false)
+  assert.match(skill, /members\/jurisdiction-auditor\/<已核对的 review_context_case_id>\/<真实 audit_uuid>\/artifact\/jurisdiction\.yaml/)
+  assert.match(skill, /`review_context_case_id`（不是另设的 `handoff.case_id`）/)
+  assert.match(skill, /不得写入 Lead `contract-review\/\*\*`、其他成员路径，猜测 ID\/binding/)
+  assert.match(skill, /独立非 Team 运行保持自己的已确认 workspace/)
+  assert.match(skill, /同步调用 return/)
+  assert.match(persona, /仅 return 最终数据给同步 Lead/)
+  assert.match(principles, /只向同步 Lead return，Lead 是唯一派发者/)
+})

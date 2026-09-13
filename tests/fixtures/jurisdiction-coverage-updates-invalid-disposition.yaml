@@ -1,0 +1,8 @@
+jurisdiction:
+  coverage_updates:
+    - rule_id: cn-rule-a
+      section: rules
+      check_source: /team/resources/rules.yaml#rules/cn-rule-a
+      status: not_applicable
+      reason: 需要事实依据才能作出不适用处置
+      evidence_refs: []

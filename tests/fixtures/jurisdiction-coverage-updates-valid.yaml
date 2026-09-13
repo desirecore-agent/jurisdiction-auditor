@@ -1,0 +1,25 @@
+jurisdiction:
+  audit_id: AUDIT-fixture
+  legacy_unchecked_field: retained-by-envelope
+  governed_by_edges:
+    - id: JUR-CLUE-01
+  compliance_findings:
+    - id: JUR-RULE-01
+  conflict_findings: []
+  coverage_gaps: []
+  human_gates: []
+  coverage_updates:
+    - rule_id: cn-rule-a
+      section: rules
+      check_source: /team/shared/resources/jurisdiction-packs/jurisdiction-cn/rules.yaml#rules/cn-rule-a
+      status: covered
+      reason: 已按当前规则完成有锚点的处置；覆盖完成不表示法律安全。
+      evidence_refs:
+        - collection: compliance_findings
+          id: JUR-RULE-01
+    - rule_id: cn-conflict-b
+      section: conflicts
+      check_source: /team/shared/resources/jurisdiction-packs/jurisdiction-cn/rules.yaml#conflicts/cn-conflict-b
+      status: blank
+      reason: conclusion_lock locked；未产生冲突结论，不能默认为不适用。
+      evidence_refs: []

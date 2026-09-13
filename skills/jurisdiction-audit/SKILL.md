@@ -12,7 +12,7 @@ description: >-
   Use when auditing a contract against jurisdiction knowledge packs: identifies governing
   law from clues, merges custom/jurisdiction/base layers, flags multi-regime conflicts with
   clause numbers and pages, and blocks when the pack version does not match the clues.
-version: 1.2.0
+version: 1.2.2
 type: procedural
 risk_level: low
 status: enabled
@@ -31,13 +31,14 @@ requires:
     - Write
     - MathCalc
     - GenerateUUID
+    - StructuredFileValidate
 metadata:
   author: DesireCore
-  version: 1.0.0
+  version: 1.2.2
   updated_at: '2026-08-31'
   pipeline_stage: 4
   upstream: clause-extractor
-  downstream: [contract-review-lead, review-reporter]
+  downstream: [contract-review-lead]
   runs_parallel_with: risk-scanner
   ontology_ref: shared/resources/business-ontology/contract.yaml
   packs_ref: shared/resources/jurisdiction-packs/
@@ -127,27 +128,32 @@ J8 用 `Grep` 在**已落盘的产物文件**上逐条检索，命中即产物�
 
 ## J1 上游核验与启动前置条件
 
-**不满足任一条即拒绝启动**，回报 `contract-review-lead`，不产出任何结论：
+**不满足任一条即拒绝启动**，只向同步 `contract-review-lead` return 失败事实，不产出任何结论：
 
 | 前置条件 | 不满足时 |
 |---|---|
-| 上游 `handoff` 块存在，`from: clause-extractor` | 拒绝启动，回报「缺交接块」 |
+| 上游 `handoff` 块存在，`from: clause-extractor` | 拒绝启动，向同步 Lead return「缺交接块」 |
 | 上游链路的受理结论 ∈ {`passed`, `conditional`} | 拒绝启动（`blocked` 时流水线已终止） |
-| `object` 三元组齐备（`contract_object_id` + `version_label` + `content_digest`） | 拒绝启动，回报「对象身份不完整」 |
-| `artifact_path`（条款抽取产物）可读，`parts[].source` 全部可读 | 拒绝启动，回报缺失的绝对路径 |
+| `object` 三元组齐备（`contract_object_id` + `version_label` + `content_digest`） | 拒绝启动，向同步 Lead return「对象身份不完整」 |
+| `artifact_path`（条款抽取产物）可读，`parts[].source` 全部可读 | 拒绝启动，向同步 Lead return 缺失的绝对路径 |
+| Team O3 交接的五个 review-context 字段齐备且与当前 Lead context 完全一致 | 不得降级，向同步 Lead return `REJECT-STALE-REVIEW-CONTEXT` |
 
 **J1 的动作**
 
 1. `Read` 上游交接块与 `artifact_path` 指向的抽取产物。
-2. `Ls` 确认有效工作目录，取绝对路径备用。**不要在提示词或产物里写死任何用户主目录字面量。**
-3. `GenerateUUID` 生成 `audit_id`，格式 `AUDIT-<YYYYMMDD>-<uuid 前 8 位>`。
-4. 原样抄录 `object`、`scope.frozen_baseline`、`scope.consistency_conclusion_allowed`——**逐字复制，不重新校验、不改写**。
-5. 把上游 `pending[]` 逐条登记为待兑现项；`must_escalate: true` 的每一条在你的交接块里必须原样出现。
+2. Team O3 路径必须有且只消费扁平的 `review_context_path`、`review_context_case_id`、`review_context_revision`、`review_context_current_manifest`、`review_context_output_constraints`。`Read` path 后解析 context，并逐项比较 `case_binding.case_id`、`revision`、`case_binding.current_contract_manifest` 与完整四项 `output_constraints`。任一字段缺失、读取/解析失败或值不完全相等，停止并向同步 Lead return `REJECT-STALE-REVIEW-CONTEXT`；不得用旧摘要、文件名、上一次回执或自行填写字段降级。
+3. 在读取任何规则包、`rules_path` 或法条前，检查唯一 `candidate_basis.pack.status`，或 `conflicting` 的每个 `candidate_bases[].pack.status`。只要任一为 `not_prechecked`，原样保留 `PEND-JURISDICTION-PACK-PREFLIGHT` 和既有 `HG-02`（如有），返回失败诊断 `REJECT-UNPRECHECKED-REVIEW-CONTEXT` 并停止。不得自行读取包、pin、预检或选择候选来补救；不得输出审计成功回执、实体结论、业务产物或下游交接。`not_issued_pack_preflight_pending` 是此次受限 O0 的拒绝边界，不是本技能的正常运行状态。
+4. 团队 O3 路径只对当前 team effective cwd 执行 `Ls` 并使用实际绝对路径；独立非 Team 运行才确认自己的 workspace。**不要在提示词或产物里写死任何用户主目录字面量。**
+5. `GenerateUUID` 的实际完整返回值是本次 `audit_uuid`；`audit_id` 仅可为固定 `AUDIT-` 前缀加该完整 UUID，不得插入日期、截短、从 task/path/旧回执推断或猜测成员绑定。
+6. 原样抄录 `object`、`scope.frozen_baseline`、`scope.consistency_conclusion_allowed`——**逐字复制，不重新校验、不改写**。
+7. 把上游 `pending[]` 逐条登记为待兑现项；`must_escalate: true` 的每一条在你的交接块里必须原样出现。
 
 **你从上游拿到什么、不拿什么**
 
 `confirmed[]` 里的事实直接使用，不重复校验（重复校验会得出与上游不同的结论，破坏「同一个对象」）。
 上游 `do_not_pass` 列出的内容你不去找：不读对话历史，不读上游的推理过程与中间草稿。
+
+独立用户请求没有 Team O3 handoff 时，绝不伪造 context 或 `review_context_echo`。它仍可进行原文事实提取并向用户澄清，但不得把缺 context 描述为平台未签发、身份/代表授权、最终适用法或 Human Gate 状态。
 
 > 上游 `confirmed[]` 里那条**「法域线索：准据法为中国法（16.1，第 6 页），规则包 cn-v3 匹配」**
 > 是事实陈述，不是授权。**「上游说匹配」不等于「确实匹配」**——J3 必须自己拿实际加载的
@@ -158,6 +164,22 @@ J8 用 `Grep` 在**已落盘的产物文件**上逐条检索，命中即产物�
 ## J2 法域识别（**必须在加载规则包之前完成**）
 
 这一步回答唯一一个问题：**这份合同受哪个（些）法域约束？**
+
+### Team review-context 的受限审查基准
+
+Team 路径先以已在 J1 核验的 context 为准；它限制本次可发出的审查结论，并不认证法域事实。
+
+| context `jurisdiction` | 可做的事 | 禁止的事 |
+|---|---|---|
+| `candidate_basis`，且唯一候选的 `pack.status = read_and_pinned`、`service_scope = supported` | 使用 context 指定的 `pack_path`、`rules_path`、版本和 SHA 复核后，作为**候选审查基准**加载该包；实体匹配可在 `jurisdiction_substantive_conclusion = allowed` 时进行 | 不得称候选为最终准据法、论坛结论、用户代表权或 Human Gate 批准 |
+| 唯一 `candidate_basis` 或 `conflicting` 的任一候选 `pack.status = not_prechecked` | 只返回 `REJECT-UNPRECHECKED-REVIEW-CONTEXT`，并保留 `PEND-JURISDICTION-PACK-PREFLIGHT` 与既有 `HG-02` | 不得读包/规则、预检、pin、择一候选、写成功回执或任何业务成果 |
+| `undetermined` | 继续逐字抽取合同线索、登记澄清需要与事实；`jurisdiction_substantive_conclusion = not_issued_missing_jurisdiction` | 不得按住所地、常见模板、文件名或其他默认规则选择包或输出实体法结论 |
+| `conflicting` | 保留全部 context candidates 与 `HG-02`，登记冲突原文；`jurisdiction_substantive_conclusion = not_issued_hg_02_conflict` | 不得择一候选、消除/确认 HG-02，或用任何一包的实体结论填补冲突 |
+| 已识别候选但 `pack.status = unavailable` | 原样保留 `RULE_SOURCE_UNAVAILABLE` 与 `required_from: lead`；`jurisdiction_substantive_conclusion = not_issued_rule_source_unavailable`，按既有规则源失败停住 | 不得把它改写成用户材料缺失、用户澄清债务或全 blank 通过 |
+
+除 `not_prechecked` 的拒绝路径外，Team 路径都保留 `factual_extraction: allowed` 的原文工作。`output_constraints` 只描述允许的输出范围，不授予读取权限、模型/工具权限、Delegate 续接、代表资格或 Human Gate 状态。
+
+旧的 `determined` / `presumed` / `undetermined` 表仅适用于没有 Team context 的独立用户事实/澄清路径；它不得被用来覆盖已经核验的 Team context。
 
 ### 判据：四类线索，按证明力排序
 
@@ -184,7 +206,7 @@ J8 用 `Grep` 在**已落盘的产物文件**上逐条检索，命中即产物�
 
 线索用 `Grep` 在原文逐类检索，检索词取自各包 `pack.yaml#jurisdiction.detection_clues`
 （`governing_law_texts` / `forum_texts` / `data_regimes` / `party_domicile_hints` / `document_type_hints`）。
-**检索词只能来自包文件，不得凭记忆补充。**
+**检索词只能来自包文件，不得凭记忆补充。**逐字 detection clue、`rule_id`、`legal_basis` 与 quote 复核都传 `pattern` 加 `is_regex: false`；只有包文件明确给出正则时才传 `is_regex: true`。
 
 ### 每条线索登记为一条 `governed_by` 边
 
@@ -350,7 +372,7 @@ temporal_gate:
   human_gate: HG-02
 ```
 
-3. `verdict: blocked_version_mismatch`，交接块 `to: null`，回报 `contract-review-lead`。
+3. `verdict: blocked_version_mismatch`，交接块 `to: null`，向同步 `contract-review-lead` return 失败事实。
 4. **不输出任何以 `cn-v1` 为依据的合规结论**——包括「用现有版本先看一下」。
    规则包与合同法域对不上时，产出的不是「不够准的结论」，是**指向另一个法律体系的结论**。
 
@@ -702,6 +724,27 @@ JUR-RULE-* 条目（含四元组 + 置信度转述）
 `gap_policy` 是各包的硬规定：**命中已知缺口领域时留白，禁止按通过计**（`contract.yaml#INV-012`）。
 `must_not_count_as_pass: true` 让这条约束在产物结构里可被机器检查，而不只是一句话。
 
+
+## J6.5 逐规则覆盖回执（coverage_updates）
+
+在 J4–J6 已读取当前固定 `rules_path` 后，读取其中的 `rules[]` 与 `conflicts[]`，对每个条目生成且只生成一条 `jurisdiction.coverage_updates[]`。每一条的闭合字段为：
+
+```yaml
+- rule_id: <当前 rules_path 中的原样 id>
+  section: rules | conflicts
+  check_source: <当前 rules_path>#rules/<rule_id>   # conflicts 同理
+  status: covered | not_applicable | blank | blocked | deferred
+  reason: <本次处理的事实理由>
+  evidence_refs:                                  # 同一 jurisdiction.yaml 内已存在的事实条目
+    - {collection: compliance_findings, id: JUR-RULE-01}
+```
+
+先在内存中构造发现集合 `rules` 与 `conflicts` 的精确三元组 `(rule_id, section, check_source)`：id 为空、同一 section 重复、未知 section、少项、多项或外来项，均不得落盘交接，直接 `HOLD`。不得把 `coverage_updates` 自己当作证据。每个 `evidence_refs` 必须能解析到本次同一产物中现有的 `governed_by_edges`、`compliance_findings`、`conflict_findings`、`coverage_gaps` 或 `human_gates` 集合及其 id；重复、悬空或跨产物引用均 `HOLD`。
+
+`covered` 仅说明该规则的**覆盖处理**有事实锚点，不表示法律安全、合规通过或 Human Gate 已通过。`not_applicable`、`blocked`、`deferred` 和 `covered` 必须写非空 `reason` 并至少有一条有效事实引用；不能因未发现冲突、未触发或缺资料而擅自写 `not_applicable`。`blank` 也必须写原因；只有原因明确是 `locked`、`unknown`、`unassessed` 或 `pending` 的留白，才可 `evidence_refs: []`。其他缺引用情形保持 `blank`，不得伪造 finding 或引用来填满回执。
+
+Draft-07 schema 只能验证这组数据的局部形状，**不能**证明上述动态规则集合、`check_source`、引用解析、法律结论或整个回执正确；这些逐项比较与解析是本步骤的运行时职责。所有规则处理完毕前不得以 handoff 的计数或路径替代实际数组读取。
+
 ---
 
 ## J7 Human Gate 登记与四元组自检
@@ -749,12 +792,11 @@ JUR-RULE-* 条目（含四元组 + 置信度转述）
 ### 落盘位置
 
 ```
-<有效工作目录>/contract-review/<contract_object_id>/jurisdiction/<audit_id>/jurisdiction.yaml
+Team O3: <实际确认的 team effective cwd>/members/jurisdiction-auditor/<已核对的 review_context_case_id>/<真实 audit_uuid>/artifact/jurisdiction.yaml
+独立运行: <本 Agent 已确认的 workspace>/contract-review/<contract_object_id>/jurisdiction/<audit_id>/jurisdiction.yaml
 ```
 
-**文件名固定为 `jurisdiction.yaml`**——`review-reporter` 的 `artifacts.jurisdiction_report`
-按这个名字取。`<有效工作目录>` 用 `Ls` 实际确认后取绝对路径，
-**不要在提示词或产物里写死任何用户主目录字面量**。
+**文件名固定为 `jurisdiction.yaml`**——Lead 之后向 `review-reporter` 交接时才在 `artifacts.jurisdiction_report` 中提供该路径。团队 O3 必须只对当前 effective cwd 做 `Ls` 实际确认，逐字复用已核对的 `review_context_case_id`（不是另设的 `handoff.case_id`），并将本次真实 `audit_uuid` 用作 member-owned 子树；不得写入 Lead `contract-review/**`、其他成员路径，猜测 ID/binding，或为新父目录循环 `Ls`/调用 shell。独立非 Team 运行保持自己的已确认 workspace。
 
 旧产物**保留不覆盖**。规则包版本、法域判定或上游受理结论变化时**整套重跑**、生成新的 `audit_id`，
 不做增量修补——法域是全局前提，前提变了所有结论一起失效。
@@ -772,6 +814,12 @@ Grep 固定字符串：合规无异常 / 未发现异常 / 合规稽核通过 / 
 
 `conclusion_lock: unlocked` 时同样禁用 `合法有效` / `无法律风险` / `可以签署` 这一组定性表述
 （`rules.md#R-060` / `actions.yaml#release_to_legal.forbidden_wording`）——**有法域包也不代表你能做法律定性**。
+
+### coverage_updates 的局部 Schema 校验
+
+完成既有禁用措辞与结构一致性检查后，读取固定资源 `references/jurisdiction-coverage-updates.schema.json`，用 `StructuredFileValidate` 对刚写入并再次 `Read` 的同一 `jurisdiction.yaml` 执行 YAML 验证。调用只使用已确认的 artifact 绝对路径和该已启用 Skill 的固定 schema 路径；读取、写入、schema 或工具调用任一失败即 `HOLD`。
+
+只有 `success: true` 且 `valid: true` 才可继续。`valid: false` 时只允许依据诊断做一次自己的 `Edit` 修复；随后必须再次 `Read` 并重跑同一校验。第二次仍无效、任何不确定结果或修复后没有重新验证，均 `HOLD`，不得交接。该成功只证明 envelope 中 `jurisdiction.coverage_updates` 的局部字段形状；不证明整个 artifact、动态集合/引用、法律判断或结论锁正确。
 
 ### 结构一致性实检（闸门一 + 闸门二）
 
@@ -793,10 +841,10 @@ Grep 固定字符串：合规无异常 / 未发现异常 / 合规稽核通过 / 
 ```yaml
 jurisdiction:
   # ── 身份与版本 ──
-  audit_id: AUDIT-20260331-9d24f1a0
+  audit_id: AUDIT-<audit-uuid>
   audited_at: 2026-03-31T11:20:44+08:00
   executed_by: jurisdiction-auditor
-  skill: jurisdiction-audit@1.0.0
+  skill: jurisdiction-audit@<当前实际加载本技能 frontmatter version>  # 运行时逐字绑定，示例占位符不得照抄
   ontology_version: onto-v1
 
   # ── 上游绑定（原样携带，不改写、不重新校验）──
@@ -817,10 +865,10 @@ jurisdiction:
 
   # ── J2 法域识别 ──
   jurisdiction_determination:
-    outcome: determined                     # determined | presumed | undetermined
+    outcome: candidate_basis                # Team 候选审查基准；不是最终适用法
     primary_jurisdiction: jurisdiction-cn
-    basis: 明示准据法（12.1，第 5 页）
-    presumption_note: null                  # presumed 时必填「准据法未明示，按注册地推定」
+    basis: 当前合同 part 线索（12.1，第 5 页）；仅作受限审查基准
+    presumption_note: null
     clues: [JUR-CLUE-01, JUR-CLUE-02, JUR-CLUE-03]
 
   governed_by_edges: [...]                  # J2 的 JUR-CLUE-* 全量
@@ -838,8 +886,15 @@ jurisdiction:
   compliance_conclusion_allowed: true
   lock_reason: null
 
+  not_issued:                               # Team context 禁止实体结论时保留；不是 unknown 或授权状态
+    jurisdiction_substantive_conclusion: not_issued_missing_jurisdiction
+    pending:
+      - code: PEND-JURISDICTION-BASIS-REQUIRED
+        required_from: user
+
   version_matrix:                           # 五维 + 本体版本，逐项登记
-    skill_version: 1.0.0
+    # 本次实际加载的 jurisdiction-audit frontmatter version；示例占位符不得照抄为运行时值。
+    skill_version: <当前实际加载本技能 frontmatter version>
     server_version: <运行时给定>
     knowledge_base_version: '2026-08-31'
     jurisdiction_pack_version: cn-v1
@@ -856,6 +911,7 @@ jurisdiction:
   alignment_advice:      [...]              # J3.2 的 JUR-ALIGN-*
   failure_marks:         [...]              # JUR-MARK-*（同优先级判定相反等）
   human_gates:           [...]              # J7 的 JUR-GATE-*
+  coverage_updates:      [...]              # J6.5：每个当前规则/冲突一条，局部形状由 v1 schema 校验
 
   summary: |                                # ← 下游会剥离本字段，关键事实不得只写在这里
     法域判定：中国法（cn-v1），依据 12.1（第 5 页）明示准据法。
@@ -873,6 +929,17 @@ jurisdiction:
 
   verdict: audited                          # audited | jurisdiction_undetermined
                                             # | blocked_version_mismatch | blocked_missing_pack
+  review_context_echo:                      # 仅 Team O3 路径，独立请求不得伪造
+    case_id: case-20260911-001
+    revision: 2
+    current_manifest:
+      status: available
+      digest: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    actual_output_constraints:
+      factual_extraction: allowed
+      directional_risk_advice: allowed
+      redline_or_negotiation_advice: allowed
+      jurisdiction_substantive_conclusion: allowed
   handoff: {...}
 ```
 
@@ -880,10 +947,10 @@ jurisdiction:
 
 | `verdict` | 触发 | `conclusion_lock` | `handoff.to` |
 |---|---|---|---|
-| `audited` | 正常完成 | `unlocked` | `[contract-review-lead, review-reporter]` |
-| `jurisdiction_undetermined` | J2 出口 `undetermined` | `locked` | `[contract-review-lead]`，附冲突与对齐建议 |
-| `blocked_version_mismatch` | J3.2 校验 B 不通过 | `locked` | `[contract-review-lead]`，附 `JUR-ALIGN-*` |
-| `blocked_missing_pack` | J3.2 校验 A 不通过（线索指向的包不存在） | `locked` | `[contract-review-lead]`，附缺哪个包 |
+| `audited` | 正常完成 | `unlocked` | `contract-review-lead`（仅同步 return） |
+| `jurisdiction_undetermined` | J2 出口 `undetermined` | `locked` | `contract-review-lead`（仅同步 return，附冲突与对齐建议） |
+| `blocked_version_mismatch` | J3.2 校验 B 不通过 | `locked` | `contract-review-lead`（仅同步 return，附 `JUR-ALIGN-*`） |
+| `blocked_missing_pack` | J3.2 校验 A 不通过（线索指向的包不存在） | `locked` | `contract-review-lead`（仅同步 return，附缺哪个包） |
 
 后三态**一律不向 `review-reporter` 投递合规结论**。组长按 `review-orchestration#O3`
 把法域类 `check_id` 全部记 `blocked`，`release_to_legal` 禁止。
@@ -900,24 +967,26 @@ jurisdiction:
 
 | 收件方 | 方式 | 内容 |
 |---|---|---|
-| `contract-review-lead` | `SendMessage` | 完成回报 + 产物绝对路径 + `stats` + `verdict` |
+| `contract-review-lead` | 同步调用 return | 产物绝对路径 + `stats` + `verdict` + 结构化 handoff 数据 |
 | `review-reporter` | **不投递结论** | 只由组长告知产物路径，它自行从磁盘读取并**重新取证** |
 | `risk-scanner` | **不投递** | 并行支线，互不读对方结论 |
 
-> ⚠️ **不得用 `Delegate` / `SendMessage` 把结论直接推给 `review-reporter`。**
+> ⚠️ 本 Agent 不调度或主动回报。`contract-review-lead` 是唯一 O3/O4 编排、账本和下游派发者；不得用 `Delegate` / `SendMessage` 向任何 Agent 推送结论。
 > 蓝本第二节要求复核 Agent「基于原文与结构化事实重新判断，**不读前序推理**」。
 > 最干净的保证不是发一份贫瘠的交接，而是**根本没有这条通道**。
 >
-> ⚠️ **禁止用 `Delegate` 的 `subtask` 模式**联系复核环节：它继承完整对话历史，正好违背独立复核约束。
+> ⚠️ 同步 return 只包含最终 artifact 的绝对路径、结构化 handoff、`stats`、`verdict`、`pending` 与失败事实；不含对话历史、推理过程、中间草稿或未验证的结论。
 
 ### 交接块结构
 
 ```yaml
 handoff:
-  to: [contract-review-lead]
+  to: contract-review-lead
   from: jurisdiction-auditor
-  audit_id: AUDIT-20260331-9d24f1a0
-  artifact_path: /abs/.../contract-review/YCIT-DPA-2025-0311/jurisdiction/AUDIT-20260331-9d24f1a0/jurisdiction.yaml
+  audit_id: AUDIT-<audit-uuid>
+  artifact_path: /abs/.../members/jurisdiction-auditor/<review-context-case-id>/<audit-uuid>/artifact/jurisdiction.yaml
+  coverage_updates_ref: /abs/.../jurisdiction.yaml#/jurisdiction/coverage_updates  # 非权威提示；Lead 仍须 Read artifact
+  coverage_updates_count: <实际数组长度>                                      # 非权威提示，不替代逐项核对
   upstream_artifact_path: /abs/.../EXTRACT-20260331-4b81ce07.extraction.yaml
 
   object:                                 # 交接对象编号（原样承自上游，不改写）
@@ -993,7 +1062,7 @@ handoff:
     - 任何未在知识包中登记的法条编号、司法解释文号或判例名称
 ```
 
-**交接方式硬规则**：引用的所有文件必须写**绝对路径**——下游 Agent 的工作目录与你不同。
+**回传硬规则**：引用的所有文件必须写**绝对路径**。本 Agent 只 return 给同步 Lead 调用方；Lead 独立复核 review-context echo、RC/HG，并决定是否派发下游，不能把本 return 当作已调度、已登记或 Human Gate 通过。
 
 ---
 
@@ -1047,6 +1116,8 @@ handoff:
 - [ ] 所加载包的 `known_gaps` 已逐条对照，命中的写了 `blank` + 「本包未覆盖」
 - [ ] `custom` 层无启用条目时，这个事实写进了报告而不是沉默略过
 - [ ] 没有把任何未检查项写成通过
+- [ ] `coverage_updates` 与本次读取的 `rules[]` / `conflicts[]` 精确一一对应，`check_source`、引用集合/id 均已逐项解析；留白仅按 J6.5 的受限原因无引用
+- [ ] 已对最终 Read 回的 artifact 跑过一次 `StructuredFileValidate`，且仅将其成功表述为 coverage_updates 局部形状有效
 
 **四元组与证据**
 
