@@ -33,7 +33,7 @@ requires:
     - GenerateUUID
 metadata:
   author: DesireCore
-  version: 1.0.0
+  version: 1.2.0
   updated_at: '2026-08-31'
   pipeline_stage: 4
   upstream: clause-extractor
@@ -816,7 +816,7 @@ jurisdiction:
   audit_id: AUDIT-<audit-uuid>
   audited_at: 2026-03-31T11:20:44+08:00
   executed_by: jurisdiction-auditor
-  skill: jurisdiction-audit@1.0.0
+  skill: jurisdiction-audit@<当前实际加载本技能 frontmatter version>  # 运行时逐字绑定，示例占位符不得照抄
   ontology_version: onto-v1
 
   # ── 上游绑定（原样携带，不改写、不重新校验）──
@@ -865,7 +865,8 @@ jurisdiction:
         required_from: user
 
   version_matrix:                           # 五维 + 本体版本，逐项登记
-    skill_version: 1.0.0
+    # 本次实际加载的 jurisdiction-audit frontmatter version；示例占位符不得照抄为运行时值。
+    skill_version: <当前实际加载本技能 frontmatter version>
     server_version: <运行时给定>
     knowledge_base_version: '2026-08-31'
     jurisdiction_pack_version: cn-v1
