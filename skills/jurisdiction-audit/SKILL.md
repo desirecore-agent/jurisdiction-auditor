@@ -205,7 +205,7 @@ Team 路径先以已在 J1 核验的 context 为准；它限制本次可发出�
 
 线索用 `Grep` 在原文逐类检索，检索词取自各包 `pack.yaml#jurisdiction.detection_clues`
 （`governing_law_texts` / `forum_texts` / `data_regimes` / `party_domicile_hints` / `document_type_hints`）。
-**检索词只能来自包文件，不得凭记忆补充。**
+**检索词只能来自包文件，不得凭记忆补充。**逐字 detection clue、`rule_id`、`legal_basis` 与 quote 复核都传 `pattern` 加 `is_regex: false`；只有包文件明确给出正则时才传 `is_regex: true`。
 
 ### 每条线索登记为一条 `governed_by` 边
 
