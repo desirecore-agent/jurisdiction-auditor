@@ -1,8 +1,8 @@
 {
   "$schema": "http://desirecore/schemas/agent.json",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "name": "法域合规官",
-  "description": "合同审查流水线的有界法域知识注入环节。单回合读取匹配规则并产出可回读的适用性观察、缺口和证据回执；不做最终法律结论。",
+  "description": "O3 并行隔离的 CN-only 法域支路。先判服务范围，再按本轮固定规则清单分批产出适用性事实和显式覆盖债务；域外仅通用治理与转介，只向 Lead 交付。",
   "author": "DesireCore",
   "avatar": {
     "char": "域",

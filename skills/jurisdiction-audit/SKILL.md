@@ -1,8 +1,9 @@
+---
 name: jurisdiction-audit
 description: >-
   有界法域审计：读取上游条款事实和一组匹配规则，在单个成员回合内产出法域识别、适用性、缺口和证据回执。
   只做法域与规则适用性观察，不做最终法律意见；超时或输入不完整就 blocked。
-version: 1.3.0
+version: 1.3.1
 type: procedural
 risk_level: low
 status: enabled
@@ -12,9 +13,9 @@ requires:
 metadata:
   author: DesireCore
   updated_at: '2026-09-15'
-  pipeline_stage: 4
-  upstream: clause-extractor
-  downstream: [contract-review-lead, review-reporter]
+  pipeline_stage: O3
+  upstream: contract-review-lead
+  downstream: [contract-review-lead]
 ---
 
 # 有界法域审计
@@ -33,7 +34,7 @@ metadata:
 
 ### J1 输入闸门
 
-只读取一次上游抽取产物和合同正文中与法域有关的片段。若上游 `verdict` 不是 `passed` 或 `conditional`、对象摘要不一致、路径不可读，立即写一个 `blocked` 回执并停止。
+只接受 Lead 转交的有效 O1 回执、O2 工件与冻结来源，并按有界批次回源。若 verdict 非 `passed|conditional`，本支 blocked；对象摘要不一致或单一路径不可读时记录对应 `blocked/capability_debt`，但一个局部失败不得自动阻断其他可核验事实。
 
 ### J2 识别
 
@@ -49,11 +50,13 @@ metadata:
 
 ### J5 交付
 
-在 `canonical_artifact_root/<case_id>/jurisdiction-audit/` 写入一个 YAML 产物和一个 `JURISDICTION-RECEIPT.yaml`。写入后完整 Read 回读。回执必须包含：
+`canonical_artifact_root` 是 Lead 已核验的本次 case/object/version/run 绝对根，不再拼接 case_id 或对象身份；缺根或未授权时返回路径欠账。为本次调用生成唯一 `jurisdiction_audit_id`，分别写入 `<canonical_artifact_root>/jurisdiction-audit/<jurisdiction_audit_id>.yaml` 与 `<canonical_artifact_root>/jurisdiction-audit/<jurisdiction_audit_id>.receipt.yaml`。写入后完整 Read 回读。回执必须包含：
 
 - `case_id`、`object`、`input_digest`、`status`；
 - `jurisdiction`、`governing_law`、`venue`；
 - `findings_count`、`unknown_count`、`blocked_reason`（无则 `null`）；
 - `artifact_path`、`evidence_refs`、`read_back: passed`。
 
-完成标准是产物和回执都真实存在、能回读、对象身份一致、所有 `covered` 条目都有证据。不要把回执正文只发在消息里；必须给 Lead 绝对路径和统计摘要。收到一个回合内无法完成时，立即写 `blocked`/`capability_debt`，不要等待或自己补写最终结论。
+完成标准是产物和回执都真实存在、能回读、对象身份一致、所有 `covered` 条目都有证据。只向 Lead 返回绝对路径、统计与欠账；不向 reporter 直送，也不读风险支路。一次委派内无法完成的行分别写 `deferred`、`blocked` 或 `capability_debt`，不等待、不自己补写最终结论，也不要求所有业务动作成功。
+
+---
