@@ -50,7 +50,7 @@ metadata:
 
 ### J5 交付
 
-在 `canonical_artifact_root/<case_id>/jurisdiction-audit/` 写入一个 YAML 产物和一个 `JURISDICTION-RECEIPT.yaml`。写入后完整 Read 回读。回执必须包含：
+`canonical_artifact_root` 是 Lead 已核验的本次 case/object/version/run 绝对根，不再拼接 case_id 或对象身份；缺根或未授权时返回路径欠账。在 `<canonical_artifact_root>/jurisdiction-audit/` 写入一个 YAML 产物和一个 `JURISDICTION-RECEIPT.yaml`。写入后完整 Read 回读。回执必须包含：
 
 - `case_id`、`object`、`input_digest`、`status`；
 - `jurisdiction`、`governing_law`、`venue`；
