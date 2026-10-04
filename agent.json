@@ -6,7 +6,10 @@
   "author": "DesireCore",
   "avatar": {
     "char": "域",
-    "color": "purple"
+    "color": "purple",
+    "image": {
+      "path": "assets/avatar.webp"
+    }
   },
   "llm": {
     "routingMode": "smart",
