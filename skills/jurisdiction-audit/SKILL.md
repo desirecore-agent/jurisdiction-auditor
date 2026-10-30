@@ -34,20 +34,27 @@ metadata:
 
 ### J1 输入闸门
 
-只接受 Lead 转交的有效 O1 回执、O2 工件与冻结来源，并按有界批次回源。J1 只读 O1 回执与 O2 工件；规则包留到下文对应步骤按需检索，不在骨架前整份 Read。若 verdict 非 `passed|conditional`，本支 blocked：骨架照写，各字段写 `blocked` 并说明原因，跳过第 2–6 步直接交回执。对象摘要不一致或单一路径不可读时记录对应 `blocked/capability_debt`，但一个局部失败不得自动阻断其他可核验事实。
+只接受 Lead 转交的有效 O1 回执、O2 工件与冻结来源，并按有界批次回源。J1 只读 O1 回执与 O2 工件；规则包留到下文对应步骤按需检索，不在骨架前整份 Read。若 verdict 非 `passed|conditional`，本支 blocked：骨架照写，各字段写 `blocked` 并说明原因，跳过第 2–8 步直接交回执。对象摘要不一致或单一路径不可读时记录对应 `blocked/capability_debt`，但一个局部失败不得自动阻断其他可核验事实。
 
 ### 落盘次序（先于 J2–J4）
 
-按下列次序推进，不要先在思考里把法域识别、规则核对和全部观察规划完再动手。「一次回复只处理一项」指：同一次回复里先用 `Edit` 写下上一项的结论，再发起下一项的检索。
+按下列次序推进，不要先在思考里把法域识别、规则核对和全部观察规划完再动手。「一次回复只处理一项」指：同一次回复里先用 `Edit` 写下上一项的结论，再发起下一项的检索。下文取行用的 `Grep` 一律传 `context_lines: 0`。
 
-1. J1 结束（含 blocked）后的下一次回复只做两步：`GenerateUUID` 取本次 `jurisdiction_audit_id`（续跑沿用会话里已有的 id，新委派一律用新 id，不读、不改其他 id 的产物），随后 `Write` 骨架到 `<canonical_artifact_root>/jurisdiction-audit/<jurisdiction_audit_id>.yaml`。骨架只含对象身份与 J1 结论；`clues`、`governing_law`、`venue`、`jurisdiction`、`rule_pack`、`rule_candidates` 各写 `null` 占位；`findings` 段下一行留锚点注释 `# <<追加 findings>>`。骨架不含任何判读：写骨架之前不识别法域、不读规则条目、不拟观察。
-2. 线索交给工具：用 `Grep` 定位 `jurisdiction-cn/pack.yaml` 与 `jurisdiction-us/pack.yaml` 的 `detection_clues:` 行号，按行号只 Read 这一段；再加固定的域外词「GDPR、欧盟、香港、澳门、台湾、境外、跨境、出境」，对原件检索：中文正文用 `literals`（每批不超过 64 项），英文正文把线索转义后用 `|` 合成正则，以 `is_regex: true`、`ignore_case: true` 检索。检索完用一次 `Edit` 把 `clues: null` 换成按准据法、争议机构、数据制度、当事方住所、援引法律、域外词分组的命中词与行号。
-3. J2 按 `governing_law` → `venue` → `jurisdiction` 的顺序，一次回复写一个字段：据 `clues` 与 `Grep` 回源取证，再用 `Edit` 改写该字段（`old_string` 带键名，如 `venue: null`）。
-4. J3 按行号 Read 匹配包 `pack.yaml` 的版本元数据，用一次 `Edit` 写 `rule_pack`：`{pack_id, pack_version, layers: [base 层版本, 法域层版本, custom 层版本]}`。
-5. 选规则：用一次 `Grep`（`pattern: "^  - id: |^    title: |^    category: |^    mandatory: |^      keywords: "`，`is_regex: true`，`path` 为匹配包的 `rules.yaml`）取出各规则的标题、类别、强制性与关键词，不整份 Read `rules.yaml`；`conflicts:` 段的条目没有 `mandatory` 与 `keywords`，是冲突判定，不作候选。再用 `literals` 查各规则关键词在原件中的命中。结合命中与 O2 条款事实选最多 5 条规则：`mandatory: true` 优先；不是劳动合同时不选 `category: labor`；关键词没命中但 O2 已抽取到对应条款的规则也可入选。选取只看标题、类别、命中和 O2 条款，不读规则正文、不推演结论。选定后用一次 `Edit` 把 `rule_candidates: null` 换成选定的 rule id 与入选理由（关键词命中或对应的 O2 条款），未入选的命中规则另列为 `deferred`。
-6. J4 一次回复只写一条观察：按行号 Read 该规则那一段（`statement`、`legal_basis`、`verdict_rules`），回源、对照、判定，再用 `Edit` 把锚点替换成该条记录加原锚点（`old_string` 取锚点整行，含行首缩进）。不在思考里先拟定全部观察。规则条件与事实之间有两种读法时，`status` 写 `unknown`，`interpretation_note` 两种读法各写一句，并写 `needs_human_confirmation: true`，不择一、也不比较哪种更严。
-7. `new_string` 每行写完整缩进，写完核对 diff 落在目标段。不攒到最后一次写整份产物，也不在思考里重审已写入的条目。
-8. 续跑指同一委派被中断后的 `DelegateControl` resume：先回读本次产物，`clues`、`rule_candidates` 已写就以它为准，不重新检索；其余从仍为 `null` 或未写入的下一项接着做。规则包版本、法域判定或上游受理结论变化属于重跑，用新 id 整套重做。
+1. J1 结束（含 blocked）后的下一次回复只做两步：`GenerateUUID` 取本次 `jurisdiction_audit_id`（续跑沿用会话里已有的 id，新委派一律用新 id，不读、不改其他 id 的产物），随后 `Write` 骨架到 `<canonical_artifact_root>/jurisdiction-audit/<jurisdiction_audit_id>.yaml`。骨架只含对象身份与 J1 结论；`clues`、`governing_law`、`venue`、`jurisdiction`、`rule_pack`、`rule_candidates` 各写 `null` 占位；`findings` 段下一行留锚点注释 `# <<追加 findings>>`。骨架不含任何判读：写骨架之前不识别法域、不读规则条目、不拟观察。J1 blocked 时骨架各字段直接写 `blocked`，`findings` 写 `[]`。
+2. 线索交给工具：用 `Grep` 定位 `jurisdiction-cn/pack.yaml` 与 `jurisdiction-us/pack.yaml` 的 `detection_clues:` 行号，按行号只 Read 这一段（到 `cited_statute_exclusions` 结束，约 45 行）。再加固定词：中文「GDPR、欧盟、香港、澳门、台湾、境外、跨境、出境」与正则 `《中华人民共和国[^》]{1,20}法》`；英文 `governed by|laws of|courts? of|arbitrat|Singapore|Hong Kong|England|European Union|\bEU\b|GDPR`。对原件检索：中文正文用 `literals`（每批不超过 64 项），正则部分用 `is_regex: true`；英文正文把线索转义后与英文固定词一起用 `|` 合成正则，以 `is_regex: true`、`ignore_case: true` 检索；中英混排两条都走。检索完用一次 `Edit` 把 `clues: null` 换成按准据法、争议机构、数据制度、当事方住所、援引法律、域外词分组的命中词与行号。
+3. J2 按 `governing_law` → `venue` → `jurisdiction` 的顺序，一次回复写一个字段：据 `clues` 与 `Grep` 回源取证，再用 `Edit` 改写该字段（`old_string` 带键名，如 `venue: null`）。`governing_law`、`venue` 有多处声明时写成列表，每项带条款号与页码。
+4. J3 用一次 `Grep`（`pattern: "pack_version:"`，`path` 依次为 `base/pack.yaml`、匹配包的 `pack.yaml`、`custom/pack.yaml`）取三层版本，用一次 `Edit` 写 `rule_pack`：`{pack_id, pack_version, layers: [base 层版本, 法域层版本, custom 层版本]}`。
+5. 冲突判定（先于选规则）：据 `clues` 与 J2 字段核对是否有下列并存——两条以上准据法声明指向不同法域；中国法与 GDPR 等域外数据制度并存；同时指向仲裁机构与人民法院；准据法为境外而合同涉及境内劳动或境内个人信息处理；中外文本并存且未约定以哪种为准。任一成立时，用一次 `Grep`（`pattern: "^  - id: cn-conflict|^    trigger: "`，`is_regex: true`，`path` 为 `jurisdiction-cn/rules.yaml`）核对对应 `cn-conflict-*` 的 `trigger`，每个成立的冲突占一个观察位置并立即用 `Edit` 追加：`status: unknown`、`human_gate: HG-02`，列出各声明的条款号、页码与冲突性质。只写并存这一事实，不对域外法作实体结论。
+6. 非中国法路径：`jurisdiction` 不是 `cn`（明确域外或 `unknown`）时，`rule_pack` 写 `{status: out_of_service_scope}` 或 `{status: unknown}` 并写原因，`rule_candidates` 写 `[]` 并写原因，`findings` 追加一条专业转介（`status: not_applicable`），跳过第 7 步。唯一例外是第 5 步认定涉及境内劳动或境内个人信息处理：只对 `category` 为 `labor` 或 `data_protection` 的规则走第 7、8 步（包内 `overriding_mandatory_note`）。
+7. 选规则（`jurisdiction` 为 `cn` 时）：用一次 `Grep`（`pattern: "^  - id: |^    title: |^    category: |^    mandatory: |^      keywords: "`，`is_regex: true`，`path` 为 `jurisdiction-cn/rules.yaml`）取出各规则的标题、类别、强制性与关键词，不整份 Read `rules.yaml`；`conflicts:` 段的条目没有 `mandatory` 与 `keywords`，已在第 5 步处理，不作候选。再用 `literals` 查各规则关键词在原件中的命中。不是劳动合同时先排除 `category: labor`。按三层依次入选，层内按 `rules.yaml` 顺序，连同第 5 步的冲突观察凑满 5 条即停：
+   - ① `mandatory: true` 且关键词命中；
+   - ② `mandatory: true` 但关键词未命中：按文件顺序逐条只问「O2 事实里有没有这条标题所指的条款」，有就入选，本层最多 2 条；
+   - ③ `mandatory: false` 且关键词命中。
+
+   选取只看标题、类别、命中和 O2 条款，不读规则正文、不推演结论。选定后用一次 `Edit` 把 `rule_candidates: null` 换成选定的 rule id、所在层与入选理由，未入选的命中规则另列为 `deferred`。
+8. J4 一次回复只写一条观察：按行号 Read 该规则那一段（`statement`、`legal_basis`、`verdict_rules`），回源、对照、判定，再用 `Edit` 把锚点替换成该条记录加原锚点（`old_string` 取锚点整行，含行首缩进）。不在思考里先拟定全部观察。规则条件与事实之间有两种读法时，`status` 写 `unknown`，`interpretation_note` 两种读法各写一句，并写 `needs_human_confirmation: true`，不择一、也不比较哪种更严。
+9. `new_string` 每行写完整缩进，写完核对 diff 落在目标段。不攒到最后一次写整份产物，也不在思考里重审已写入的条目。
+10. 续跑指同一委派被中断后的 `DelegateControl` resume：先回读本次产物，`clues`、`rule_candidates` 已写就以它为准，不重新检索；其余从仍为 `null` 或未写入的下一项接着做。规则包版本、法域判定或上游受理结论变化属于重跑，用新 id 整套重做。
 
 ### J2 识别
 
@@ -55,11 +62,11 @@ metadata:
 
 ### J3 规则包
 
-只读取一个匹配的 `jurisdiction-packs/<slug>/pack.yaml` 的版本元数据与 `detection_clues` 段，规则正文按第 5、6 步从 `rules.yaml` 按需取；若没有匹配包或日期不在包的有效区间，状态为 `unknown` 或 `blocked`，说明原因。不要遍历整个资源树，不要重复读取同一文件。
+只读取一个匹配的 `jurisdiction-packs/<slug>/pack.yaml` 的版本元数据与 `detection_clues` 段，规则正文按第 7、8 步从 `rules.yaml` 按需取；若没有匹配包或日期不在包的有效区间，状态为 `unknown` 或 `blocked`，说明原因。不要遍历整个资源树，不要重复读取同一文件。
 
 ### J4 有界观察
 
-最多 5 条记录，每条必须包含：`finding_id`、`status`（`covered`/`unknown`/`not_applicable`/`blocked`）、`clause_ref`、`evidence_quote`、`location`、`rule_ref`、`reason`；两种读法并存时另写 `interpretation_note` 与 `needs_human_confirmation: true`。只能引用 Read/Grep 实际看到的原文；没有证据就 `unknown`。
+最多 5 条记录（含第 5 步的冲突观察与第 6 步的转介），每条必须包含：`finding_id`、`status`（`covered`/`unknown`/`not_applicable`/`blocked`）、`clause_ref`、`evidence_quote`、`location`、`rule_ref`、`reason`；两种读法并存时另写 `interpretation_note` 与 `needs_human_confirmation: true`。只能引用 Read/Grep 实际看到的原文；没有证据就 `unknown`。
 
 ### J5 交付
 

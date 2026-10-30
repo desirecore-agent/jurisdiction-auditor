@@ -19,7 +19,7 @@ test('落盘次序排在 J1 与 J2 之间：先取 id 写骨架，J1 不在骨�
   const text = await readSkill()
   const j1 = section(text, '### J1 输入闸门', '### 落盘次序')
   assert.match(j1, /J1 只读 O1 回执与 O2 工件/)
-  assert.match(j1, /跳过第 2–6 步直接交回执/)
+  assert.match(j1, /跳过第 2–8 步直接交回执/)
   const order = section(text, '### 落盘次序', '### J2 识别')
   assert.match(order, /下一次回复只做两步：`GenerateUUID`.*随后 `Write` 骨架/)
   assert.match(order, /`clues`、`governing_law`、`venue`、`jurisdiction`、`rule_pack`、`rule_candidates` 各写 `null` 占位/)
@@ -30,14 +30,21 @@ test('落盘次序排在 J1 与 J2 之间：先取 id 写骨架，J1 不在骨�
 test('线索与规则候选都由工具检索给出，并有固定落点', async () => {
   const order = section(await readSkill(), '### 落盘次序', '### J2 识别')
   assert.match(order, /`detection_clues:` 行号，按行号只 Read 这一段/)
-  assert.match(order, /固定的域外词「GDPR、欧盟、香港、澳门、台湾、境外、跨境、出境」/)
-  assert.match(order, /英文正文把线索转义后用 `\|` 合成正则，以 `is_regex: true`、`ignore_case: true` 检索/)
+  assert.match(order, /中文「GDPR、欧盟、香港、澳门、台湾、境外、跨境、出境」/)
+  assert.match(order, /英文正文把线索转义后与英文固定词一起用 `\|` 合成正则，以 `is_regex: true`、`ignore_case: true` 检索；中英混排两条都走/)
   assert.match(order, /把 `clues: null` 换成/)
   assert.match(order, /J2 按 `governing_law` → `venue` → `jurisdiction` 的顺序/)
   assert.match(order, /不整份 Read `rules\.yaml`/)
-  assert.match(order, /`conflicts:` 段的条目没有 `mandatory` 与 `keywords`，是冲突判定，不作候选/)
-  assert.match(order, /`mandatory: true` 优先；不是劳动合同时不选 `category: labor`/)
-  assert.match(order, /把 `rule_candidates: null` 换成选定的 rule id 与入选理由/)
+  assert.match(order, /`conflicts:` 段的条目没有 `mandatory` 与 `keywords`，已在第 5 步处理，不作候选/)
+  assert.match(order, /不是劳动合同时先排除 `category: labor`/)
+  assert.match(order, /① `mandatory: true` 且关键词命中/)
+  assert.match(order, /② `mandatory: true` 但关键词未命中：按文件顺序逐条只问「O2 事实里有没有这条标题所指的条款」，有就入选，本层最多 2 条/)
+  assert.match(order, /③ `mandatory: false` 且关键词命中/)
+  assert.match(order, /连同第 5 步的冲突观察凑满 5 条即停/)
+  assert.match(order, /把 `rule_candidates: null` 换成选定的 rule id、所在层与入选理由/)
+  assert.match(order, /`governed by\|laws of\|courts\? of\|arbitrat/)
+  assert.match(order, /`《中华人民共和国\[\^》\]\{1,20\}法》`/)
+  assert.match(order, /`context_lines: 0`/)
   assert.match(order, /按行号 Read 该规则那一段/)
 })
 
@@ -48,6 +55,20 @@ test('两种读法写 unknown 并待人工确认，不择一也不比较严宽',
   assert.doesNotMatch(text, /按更严的一种记录/)
   const principles = await readFile(path.join(root, 'principles.md'), 'utf8')
   assert.match(principles, /冲突无法判定时输出 `unknown` 并进 `HG-02`，\*\*禁止择一默认\*\*/)
+})
+
+test('冲突判定先于选规则，非中国法走转介路径', async () => {
+  const order = section(await readSkill(), '### 落盘次序', '### J2 识别')
+  const conflict = order.indexOf('5. 冲突判定（先于选规则）')
+  const select = order.indexOf('7. 选规则')
+  assert.ok(conflict > 0 && select > conflict, '冲突判定必须排在选规则之前')
+  assert.match(order, /中国法与 GDPR 等域外数据制度并存/)
+  assert.match(order, /`status: unknown`、`human_gate: HG-02`，列出各声明的条款号、页码与冲突性质/)
+  assert.match(order, /只写并存这一事实，不对域外法作实体结论/)
+  assert.match(order, /`governing_law`、`venue` 有多处声明时写成列表/)
+  assert.match(order, /`jurisdiction` 不是 `cn`（明确域外或 `unknown`）时，`rule_pack` 写 `\{status: out_of_service_scope\}`/)
+  assert.match(order, /`findings` 追加一条专业转介/)
+  assert.match(order, /只对 `category` 为 `labor` 或 `data_protection` 的规则走第 7、8 步/)
 })
 
 test('续跑与重跑分开，原则与人设的顺序和 id 名与技能一致', async () => {
@@ -66,16 +87,18 @@ test('J5 不再重复骨架细则，只引用落盘次序', async () => {
   assert.doesNotMatch(j5, /立即生成本次唯一的 `jurisdiction_audit_id`/)
 })
 
-test('规则行提取正则与 CN 规则包的真实行格式一致', async () => {
+test('规则行提取正则与 CN 规则包的真实行格式一致', async (t) => {
   const rulesPath = path.resolve(root, '../contract-review-team/shared/resources/jurisdiction-packs/jurisdiction-cn/rules.yaml')
   let text
-  try { text = await readFile(rulesPath, 'utf8') } catch { return } // 单独检出成员仓库时跳过
+  try { text = await readFile(rulesPath, 'utf8') } catch { t.skip('单独检出成员仓库，缺少团队仓库规则包'); return }
   const doc = parse(text)
   const lines = text.split('\n')
   assert.equal(lines.filter((l) => /^ {2}- id: /.test(l)).length, doc.rules.length + doc.conflicts.length)
   assert.equal(lines.filter((l) => /^ {4}mandatory: /.test(l)).length, doc.rules.length)
   assert.equal(lines.filter((l) => /^ {6}keywords: \[.*\]$/.test(l)).length, doc.rules.length)
   for (const c of doc.conflicts) assert.ok(!('mandatory' in c) && !('keywords' in c), `${c.id} 不应带 mandatory/keywords`)
+  assert.equal(lines.filter((l) => /^ {2}- id: cn-conflict/.test(l)).length, doc.conflicts.length)
+  assert.equal(lines.filter((l) => /^ {4}trigger: /.test(l)).length, doc.conflicts.length)
 })
 
 const replaceFirst = (doc, oldStr, newStr) => {
