@@ -3,7 +3,7 @@ name: jurisdiction-audit
 description: >-
   有界法域审计：读取上游条款事实和一组匹配规则，在单个成员回合内产出法域识别、适用性、缺口和证据回执。
   只做法域与规则适用性观察，不做最终法律意见；超时或输入不完整就 blocked。
-version: 1.3.1
+version: 1.4.0
 type: procedural
 risk_level: low
 status: enabled
@@ -12,7 +12,7 @@ requires:
   tools: [Read, Ls, Glob, Grep, Write, Edit, GenerateUUID]
 metadata:
   author: DesireCore
-  updated_at: '2026-09-15'
+  updated_at: '2026-10-30'
   pipeline_stage: O3
   upstream: contract-review-lead
   downstream: [contract-review-lead]
@@ -36,6 +36,17 @@ metadata:
 
 只接受 Lead 转交的有效 O1 回执、O2 工件与冻结来源，并按有界批次回源。若 verdict 非 `passed|conditional`，本支 blocked；对象摘要不一致或单一路径不可读时记录对应 `blocked/capability_debt`，但一个局部失败不得自动阻断其他可核验事实。
 
+### 落盘次序（先于 J2–J4）
+
+按下列次序推进，不要先在思考里把法域识别、规则包核对和全部观察规划完再动手：
+
+1. J1 结束（含 blocked）后的下一次回复只做两步：`GenerateUUID` 取本次 `jurisdiction_audit_id`（续跑沿用会话里已有的 id，新委派一律用新 id，不读、不改其他 id 的产物），随后 `Write` 骨架到 `<canonical_artifact_root>/jurisdiction-audit/<jurisdiction_audit_id>.yaml`。骨架只含对象身份与 J1 结论；`jurisdiction`、`governing_law`、`venue` 与 J3 结果 `rule_pack` 各写 `null` 占位；`findings` 段下一行留锚点注释 `# <<追加 findings>>`。骨架不含任何判读：写骨架之前不识别法域、不读规则条目、不拟观察。
+2. J2 一次回复只写一个字段：用 `Grep` 回源取证，再用 `Edit` 改写该字段（`old_string` 带键名，如 `venue: null`）。域外线索用一次 `Grep` 的 `literals` 批量检索，以返回的 matched/not_found 为据。
+3. J3 读完匹配的规则包后，用一次 `Edit` 写 `rule_pack`。
+4. J4 一次回复只写一条观察：只为这一条回源、对照规则、判定，再用 `Edit` 把锚点替换成该条记录加原锚点（`old_string` 取锚点整行，含行首缩进）。不在思考里先拟定全部观察。规则条件与事实之间有两种读法时，按更严的一种记录，写一句 `interpretation_note`，并把该点列为待人工确认，不在思考里反复比较。
+5. `new_string` 每行写完整缩进，写完核对 diff 落在目标段。不攒到最后一次写整份产物，也不在思考里重审已写入的条目。
+6. 被续跑时先回读本次产物，从仍为 `null` 或未写入的下一项接着做。
+
 ### J2 识别
 
 从标题、适用法律、管辖、争议解决和明确的实体法名称中识别 `jurisdiction`、`governing_law`、`venue`。没有充分证据时使用 `unknown`，不得猜测。
@@ -50,7 +61,7 @@ metadata:
 
 ### J5 交付
 
-`canonical_artifact_root` 是 Lead 已核验的本次 case/object/version/run 绝对根，不再拼接 case_id 或对象身份；缺根或未授权时返回路径欠账。J1 结束后（含 blocked）立即生成本次唯一的 `jurisdiction_audit_id`（续跑沿用会话里已有的 id，新委派一律用新 id，不读、不改其他 id 的产物），先向 `<canonical_artifact_root>/jurisdiction-audit/<jurisdiction_audit_id>.yaml` 写骨架：对象身份与 J1 结论；`jurisdiction`、`governing_law`、`venue` 与 J3 结果 `rule_pack` 各写 `null` 占位；`findings` 段下一行留锚点注释 `# <<追加 findings>>`。J2、J3 得出结论即用 `Edit` 改写对应字段（`old_string` 带键名，如 `venue: null`）；J4 每完成一条观察，把锚点替换成该条记录加原锚点（`old_string` 取锚点整行，含行首缩进）。`new_string` 每行写完整缩进，写完核对 diff 落在目标段。不攒到最后一次写整份产物，也不在思考里重审已写入的条目；交付前可用一次 `Grep` 的 `literals` 批量回查全部引文。全部完成后删去锚点、把空段改成 `[]`、仍无结论的字段改为 `unknown` 并说明原因，再写 `<canonical_artifact_root>/jurisdiction-audit/<jurisdiction_audit_id>.receipt.yaml`，两份文件都完整 Read 回读。被续跑时先回读本次产物，从仍为 `null` 或未写入的下一项接着做。回执必须包含：
+`canonical_artifact_root` 是 Lead 已核验的本次 case/object/version/run 绝对根，不再拼接 case_id 或对象身份；缺根或未授权时返回路径欠账。产物按上文「落盘次序」逐步写入 `<canonical_artifact_root>/jurisdiction-audit/<jurisdiction_audit_id>.yaml`。交付前可用一次 `Grep` 的 `literals` 批量回查全部引文。全部完成后删去锚点、把空段改成 `[]`、仍无结论的字段改为 `unknown` 并说明原因，再写 `<canonical_artifact_root>/jurisdiction-audit/<jurisdiction_audit_id>.receipt.yaml`，两份文件都完整 Read 回读。回执必须包含：
 
 - `case_id`、`object`、`input_digest`、`status`；
 - `jurisdiction`、`governing_law`、`venue`；
