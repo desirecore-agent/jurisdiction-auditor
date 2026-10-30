@@ -7,28 +7,75 @@ import { parse } from 'yaml'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const skillPath = path.join(root, 'skills/jurisdiction-audit/SKILL.md')
+const readSkill = () => readFile(skillPath, 'utf8')
+const section = (text, from, to) => {
+  const a = text.indexOf(from)
+  const b = text.indexOf(to)
+  assert.ok(a > 0 && b > a, `${from} 必须位于 ${to} 之前`)
+  return text.slice(a, b)
+}
 
-test('落盘次序排在 J2 之前：先取 id 写骨架，再一次写一个字段或一条观察', async () => {
-  const text = await readFile(skillPath, 'utf8')
-  const j1 = text.indexOf('### J1 输入闸门')
-  const order = text.indexOf('### 落盘次序')
-  const j2 = text.indexOf('### J2 识别')
-  assert.ok(j1 > 0 && order > j1 && j2 > order, '落盘次序必须位于 J1 与 J2 之间')
-  const section = text.slice(order, j2)
-  assert.match(section, /下一次回复只做两步：`GenerateUUID`.*随后 `Write` 骨架/)
-  assert.match(section, /写骨架之前不识别法域、不读规则条目、不拟观察/)
-  assert.match(section, /J2 一次回复只写一个字段/)
-  assert.match(section, /`Grep` 的 `literals` 批量检索/)
-  assert.match(section, /J4 一次回复只写一条观察/)
-  assert.match(section, /按更严的一种记录，写一句 `interpretation_note`，并把该点列为待人工确认/)
-  assert.match(section, /被续跑时先回读本次产物/)
+test('落盘次序排在 J1 与 J2 之间：先取 id 写骨架，J1 不在骨架前整份读规则包', async () => {
+  const text = await readSkill()
+  const j1 = section(text, '### J1 输入闸门', '### 落盘次序')
+  assert.match(j1, /J1 只读 O1 回执与 O2 工件/)
+  assert.match(j1, /跳过第 2–6 步直接交回执/)
+  const order = section(text, '### 落盘次序', '### J2 识别')
+  assert.match(order, /下一次回复只做两步：`GenerateUUID`.*随后 `Write` 骨架/)
+  assert.match(order, /`clues`、`governing_law`、`venue`、`jurisdiction`、`rule_pack`、`rule_candidates` 各写 `null` 占位/)
+  assert.match(order, /写骨架之前不识别法域、不读规则条目、不拟观察/)
+  assert.match(order, /同一次回复里先用 `Edit` 写下上一项的结论，再发起下一项的检索/)
+})
+
+test('线索与规则候选都由工具检索给出，并有固定落点', async () => {
+  const order = section(await readSkill(), '### 落盘次序', '### J2 识别')
+  assert.match(order, /`detection_clues:` 行号，按行号只 Read 这一段/)
+  assert.match(order, /固定的域外词「GDPR、欧盟、香港、澳门、台湾、境外、跨境、出境」/)
+  assert.match(order, /英文正文把线索转义后用 `\|` 合成正则，以 `is_regex: true`、`ignore_case: true` 检索/)
+  assert.match(order, /把 `clues: null` 换成/)
+  assert.match(order, /J2 按 `governing_law` → `venue` → `jurisdiction` 的顺序/)
+  assert.match(order, /不整份 Read `rules\.yaml`/)
+  assert.match(order, /`conflicts:` 段的条目没有 `mandatory` 与 `keywords`，是冲突判定，不作候选/)
+  assert.match(order, /`mandatory: true` 优先；不是劳动合同时不选 `category: labor`/)
+  assert.match(order, /把 `rule_candidates: null` 换成选定的 rule id 与入选理由/)
+  assert.match(order, /按行号 Read 该规则那一段/)
+})
+
+test('两种读法写 unknown 并待人工确认，不择一也不比较严宽', async () => {
+  const text = await readSkill()
+  const order = section(text, '### 落盘次序', '### J2 识别')
+  assert.match(order, /`status` 写 `unknown`，`interpretation_note` 两种读法各写一句，并写 `needs_human_confirmation: true`，不择一、也不比较哪种更严/)
+  assert.doesNotMatch(text, /按更严的一种记录/)
+  const principles = await readFile(path.join(root, 'principles.md'), 'utf8')
+  assert.match(principles, /冲突无法判定时输出 `unknown` 并进 `HG-02`，\*\*禁止择一默认\*\*/)
+})
+
+test('续跑与重跑分开，原则与人设的顺序和 id 名与技能一致', async () => {
+  const text = await readSkill()
+  assert.match(text, /续跑指同一委派被中断后的 `DelegateControl` resume/)
+  assert.match(text, /`clues`、`rule_candidates` 已写就以它为准，不重新检索/)
+  assert.match(text, /规则包版本、法域判定或上游受理结论变化属于重跑，用新 id 整套重做/)
+  const [principles, persona] = await Promise.all(['principles.md', 'persona.md'].map((f) => readFile(path.join(root, f), 'utf8')))
+  assert.match(principles, /固定顺序 J1→J5/)
+  assert.doesNotMatch(principles + persona, /`audit_id`/)
 })
 
 test('J5 不再重复骨架细则，只引用落盘次序', async () => {
-  const text = await readFile(skillPath, 'utf8')
-  const j5 = text.slice(text.indexOf('### J5 交付'))
+  const j5 = (await readSkill()).split('### J5 交付')[1]
   assert.match(j5, /按上文「落盘次序」逐步写入/)
   assert.doesNotMatch(j5, /立即生成本次唯一的 `jurisdiction_audit_id`/)
+})
+
+test('规则行提取正则与 CN 规则包的真实行格式一致', async () => {
+  const rulesPath = path.resolve(root, '../contract-review-team/shared/resources/jurisdiction-packs/jurisdiction-cn/rules.yaml')
+  let text
+  try { text = await readFile(rulesPath, 'utf8') } catch { return } // 单独检出成员仓库时跳过
+  const doc = parse(text)
+  const lines = text.split('\n')
+  assert.equal(lines.filter((l) => /^ {2}- id: /.test(l)).length, doc.rules.length + doc.conflicts.length)
+  assert.equal(lines.filter((l) => /^ {4}mandatory: /.test(l)).length, doc.rules.length)
+  assert.equal(lines.filter((l) => /^ {6}keywords: \[.*\]$/.test(l)).length, doc.rules.length)
+  for (const c of doc.conflicts) assert.ok(!('mandatory' in c) && !('keywords' in c), `${c.id} 不应带 mandatory/keywords`)
 })
 
 const replaceFirst = (doc, oldStr, newStr) => {
@@ -43,28 +90,28 @@ test('骨架与带键名的逐项 Edit 每个中间态都可解析', () => {
     '  jurisdiction_audit_id: "JUR-test"',
     '  case_id: "C00"',
     '  j1: {verdict: passed}',
-    '  jurisdiction: null',
+    '  clues: null',
     '  governing_law: null',
     '  venue: null',
+    '  jurisdiction: null',
     '  rule_pack: null',
+    '  rule_candidates: null',
     '  findings:',
     '    # <<追加 findings>>',
     '',
   ].join('\n')
   const states = [doc]
-  doc = replaceFirst(doc, '  governing_law: null', '  governing_law: {value: "中华人民共和国法律", clause_ref: "16.1"}')
-  states.push(doc)
-  doc = replaceFirst(doc, '  venue: null', '  venue: {value: "仲裁", clause_ref: "16.2"}')
-  states.push(doc)
-  doc = replaceFirst(doc, '  jurisdiction: null', '  jurisdiction: cn')
-  states.push(doc)
-  doc = replaceFirst(doc, '  rule_pack: null', '  rule_pack: {pack_id: jurisdiction-cn, pack_version: cn-v3}')
-  states.push(doc)
-  doc = replaceFirst(doc, '    # <<追加 findings>>', '    - {finding_id: "JUR-001", status: unknown, interpretation_note: "两种读法取更严"}\n    # <<追加 findings>>')
-  states.push(doc)
+  const step = (oldStr, newStr) => { doc = replaceFirst(doc, oldStr, newStr); states.push(doc) }
+  step('  clues: null', '  clues: {governing_law: [{text: "中华人民共和国法律", line: 143}], foreign: []}')
+  step('  governing_law: null', '  governing_law: {value: "中华人民共和国法律", clause_ref: "16.1"}')
+  step('  venue: null', '  venue: {value: "仲裁", clause_ref: "16.2"}')
+  step('  jurisdiction: null', '  jurisdiction: cn')
+  step('  rule_pack: null', '  rule_pack: {pack_id: jurisdiction-cn, pack_version: cn-v3, layers: [base-v1, cn-v3, custom-v1]}')
+  step('  rule_candidates: null', '  rule_candidates: {selected: [{id: cn-arbitration-agreement-validity, reason: "关键词命中"}], deferred: []}')
+  step('    # <<追加 findings>>', '    - {finding_id: "JUR-001", status: unknown, interpretation_note: ["读法一", "读法二"], needs_human_confirmation: true}\n    # <<追加 findings>>')
   for (const [i, s] of states.entries()) assert.doesNotThrow(() => parse(s), `第 ${i} 个中间态不是合法 YAML`)
   const final = parse(doc).jurisdiction_audit
   assert.equal(final.jurisdiction, 'cn')
-  assert.equal(final.rule_pack.pack_version, 'cn-v3')
-  assert.equal(final.findings.length, 1)
+  assert.equal(final.rule_pack.layers.length, 3)
+  assert.equal(final.findings[0].needs_human_confirmation, true)
 })
