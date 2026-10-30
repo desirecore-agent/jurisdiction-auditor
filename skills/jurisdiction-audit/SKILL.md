@@ -45,7 +45,11 @@ metadata:
 3. J2 按 `governing_law` → `venue` → `jurisdiction` 的顺序，一次回复写一个字段：据 `clues` 与 `Grep` 回源取证，再用 `Edit` 改写该字段（`old_string` 带键名，如 `venue: null`）。`governing_law`、`venue` 有多处声明时写成列表，每项带条款号与页码。
 4. J3 用一次 `Grep`（`pattern: "pack_version:"`，`path` 依次为 `base/pack.yaml`、匹配包的 `pack.yaml`、`custom/pack.yaml`）取三层版本，用一次 `Edit` 写 `rule_pack`：`{pack_id, pack_version, layers: [base 层版本, 法域层版本, custom 层版本]}`。
 5. 冲突判定（先于选规则）：据 `clues` 与 J2 字段核对是否有下列并存——两条以上准据法声明指向不同法域；中国法与 GDPR 等域外数据制度并存；同时指向仲裁机构与人民法院；准据法为境外而合同涉及境内劳动或境内个人信息处理；中外文本并存且未约定以哪种为准。任一成立时，用一次 `Grep`（`pattern: "^  - id: cn-conflict|^    trigger: "`，`is_regex: true`，`path` 为 `jurisdiction-cn/rules.yaml`）核对对应 `cn-conflict-*` 的 `trigger`，每个成立的冲突占一个观察位置并立即用 `Edit` 追加：`status: unknown`、`human_gate: HG-02`，列出各声明的条款号、页码与冲突性质。只写并存这一事实，不对域外法作实体结论。
-6. 非中国法路径：`jurisdiction` 不是 `cn`（明确域外或 `unknown`）时，`rule_pack` 写 `{status: out_of_service_scope}` 或 `{status: unknown}` 并写原因，`rule_candidates` 写 `[]` 并写原因，`findings` 追加一条专业转介（`status: not_applicable`），跳过第 7 步。唯一例外是第 5 步认定涉及境内劳动或境内个人信息处理：只对 `category` 为 `labor` 或 `data_protection` 的规则走第 7、8 步（包内 `overriding_mandatory_note`）。
+6. 非中国法路径（跳过第 7 步，`rule_candidates` 写 `[]` 并写原因）：
+   - 明确域外：`rule_pack` 写 `{status: out_of_service_scope}`，`findings` 追加一条专业转介（`status: not_applicable`）。
+   - `jurisdiction` 为 `unknown`（准据法读不出、多条准据法互斥未决、规则包版本与线索对不上）：`rule_pack` 写 `{status: unknown}`，`findings` 追加一条 `status: blocked` 的观察，`reason` 写「法域待确认」并附数据对齐建议，不写转介、不出合规结论。
+
+   明确域外时的唯一例外是第 5 步认定涉及境内劳动或境内个人信息处理：只对 `category` 为 `labor` 或 `data_protection` 的规则走第 7、8 步（包内 `overriding_mandatory_note`）。
 7. 选规则（`jurisdiction` 为 `cn` 时）：用一次 `Grep`（`pattern: "^  - id: |^    title: |^    category: |^    mandatory: |^      keywords: "`，`is_regex: true`，`path` 为 `jurisdiction-cn/rules.yaml`）取出各规则的标题、类别、强制性与关键词，不整份 Read `rules.yaml`；`conflicts:` 段的条目没有 `mandatory` 与 `keywords`，已在第 5 步处理，不作候选。再用 `literals` 查各规则关键词在原件中的命中。不是劳动合同时先排除 `category: labor`。按三层依次入选，层内按 `rules.yaml` 顺序，连同第 5 步的冲突观察凑满 5 条即停：
    - ① `mandatory: true` 且关键词命中；
    - ② `mandatory: true` 但关键词未命中：按文件顺序逐条只问「O2 事实里有没有这条标题所指的条款」，有就入选，本层最多 2 条；

@@ -66,8 +66,9 @@ test('冲突判定先于选规则，非中国法走转介路径', async () => {
   assert.match(order, /`status: unknown`、`human_gate: HG-02`，列出各声明的条款号、页码与冲突性质/)
   assert.match(order, /只写并存这一事实，不对域外法作实体结论/)
   assert.match(order, /`governing_law`、`venue` 有多处声明时写成列表/)
-  assert.match(order, /`jurisdiction` 不是 `cn`（明确域外或 `unknown`）时，`rule_pack` 写 `\{status: out_of_service_scope\}`/)
-  assert.match(order, /`findings` 追加一条专业转介/)
+  assert.match(order, /明确域外：`rule_pack` 写 `\{status: out_of_service_scope\}`，`findings` 追加一条专业转介/)
+  // 法域待定不是域外：人设要求「法域待确认」+ 阻断 + 数据对齐建议，O5 据此按 DED-D3-JURIS-UNDETERMINED 计分
+  assert.match(order, /`jurisdiction` 为 `unknown`.*`rule_pack` 写 `\{status: unknown\}`，`findings` 追加一条 `status: blocked` 的观察，`reason` 写「法域待确认」并附数据对齐建议，不写转介/)
   assert.match(order, /只对 `category` 为 `labor` 或 `data_protection` 的规则走第 7、8 步/)
 })
 
